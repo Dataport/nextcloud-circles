@@ -17,7 +17,7 @@ import CircleDetails from './CircleDetails.vue'
  */
 const loadState = vi.hoisted(() => vi.fn((app: string, key: string, fallback: unknown) => fallback))
 const getTeamFolder = vi.hoisted(() => vi.fn<(teamId: string) => Promise<TeamFolder | null>>(async () => null))
-const upgradeTeamFolder = vi.hoisted(() => vi.fn<(teamId: string) => Promise<TeamFolder>>(async () => ({ id: 1, mountPoint: 'Team' })))
+const upgradeTeamFolder = vi.hoisted(() => vi.fn<(teamId: string) => Promise<TeamFolder>>(async () => ({ id: 1, mountPoint: 'Team', quota: null })))
 const showError = vi.hoisted(() => vi.fn())
 const showSuccess = vi.hoisted(() => vi.fn())
 const axiosGet = vi.hoisted(() => vi.fn(async () => ({ data: { ocs: { data: { resources: [] } } } })))
@@ -144,7 +144,7 @@ describe('CircleDetails folder button', () => {
 	it('renders no folder button when a team folder already exists', async () => {
 		const wrapper = mountDetails({}, {
 			providerAvailable: true,
-			teamFolder: { id: 42, mountPoint: 'Marketing' },
+			teamFolder: { id: 42, mountPoint: 'Marketing', quota: null },
 		})
 		await vi.waitFor(() => expect(wrapper.vm.teamFolder).not.toBeNull())
 		expect(wrapper.vm.folderButtonType).toBeNull()
@@ -260,7 +260,7 @@ describe('CircleDetails team folder upgrade banner', () => {
 	it('hides the banner when a team folder exists', async () => {
 		const wrapper = mountDetails({}, {
 			providerAvailable: true,
-			teamFolder: { id: 42, mountPoint: 'Marketing' },
+			teamFolder: { id: 42, mountPoint: 'Marketing', quota: null },
 		})
 		await vi.waitFor(() => expect(wrapper.vm.teamFolder).not.toBeNull())
 
@@ -302,7 +302,7 @@ describe('CircleDetails team folder upgrade banner', () => {
 		await wrapper.vm.createTeamFolder()
 
 		expect(upgradeTeamFolder).toHaveBeenCalledWith('team-1')
-		expect(wrapper.vm.teamFolder).toEqual({ id: 1, mountPoint: 'Team' })
+		expect(wrapper.vm.teamFolder).toEqual({ id: 1, mountPoint: 'Team', quota: null })
 		expect(wrapper.vm.$router.push).toHaveBeenCalledWith({
 			name: 'team',
 			params: { teamId: 'team-1' },

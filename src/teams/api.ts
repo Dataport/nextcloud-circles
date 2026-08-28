@@ -14,9 +14,6 @@ import { getRecommendations, getSuggestions } from './team-page/services/collabo
 /** `SHARES_TYPES_MEMBER_MAP` is built dynamically, so type its shape explicitly. */
 const shareTypeToMemberType = SHARES_TYPES_MEMBER_MAP as Record<number, number>
 
-/** OCS endpoints require this header. */
-const HEADERS = { 'OCS-APIRequest': 'true' }
-
 /** Minimal shape of an OCS response envelope. */
 interface OcsResponse<T> {
 	ocs: { data: T }
@@ -141,8 +138,8 @@ function mapFullMember(raw: RawMember): Member {
  */
 export async function fetchTeams(): Promise<Team[]> {
 	const [circlesRes, dashRes] = await Promise.allSettled([
-		axios.get<OcsResponse<RawCircle[]>>(generateOcsUrl('apps/circles/circles') + '?limit=-1', { headers: HEADERS }),
-		axios.get<OcsResponse<RawDashboardTeam[]>>(generateOcsUrl('apps/circles/teams/dashboard/widget') + '?limit=200&offset=0', { headers: HEADERS }),
+		axios.get<OcsResponse<RawCircle[]>>(generateOcsUrl('apps/circles/circles') + '?limit=-1'),
+		axios.get<OcsResponse<RawDashboardTeam[]>>(generateOcsUrl('apps/circles/teams/dashboard/widget') + '?limit=200&offset=0'),
 	])
 
 	// The team list is required; without it we have nothing to show.
@@ -181,10 +178,7 @@ export async function fetchTeams(): Promise<Team[]> {
  * @param teamId - The team single id
  */
 export async function fetchTeamMembers(teamId: string): Promise<Member[]> {
-	const res = await axios.get<OcsResponse<RawMember[]>>(
-		generateOcsUrl('apps/circles/circles/{circleId}/members', { circleId: teamId }),
-		{ headers: HEADERS },
-	)
+	const res = await axios.get<OcsResponse<RawMember[]>>(generateOcsUrl('apps/circles/circles/{circleId}/members', { circleId: teamId }))
 	return (res.data.ocs.data ?? []).map(mapFullMember)
 }
 
@@ -197,7 +191,6 @@ export async function createTeam(name: string): Promise<string> {
 	const res = await axios.post<OcsResponse<RawCircle>>(
 		generateOcsUrl('apps/circles/circles'),
 		{ name },
-		{ headers: HEADERS },
 	)
 	return res.data.ocs.data.id
 }
@@ -212,7 +205,6 @@ export async function setTeamDescription(teamId: string, description: string): P
 	await axios.put(
 		generateOcsUrl('apps/circles/circles/{circleId}/description', { circleId: teamId }),
 		{ value: description },
-		{ headers: HEADERS },
 	)
 }
 
@@ -225,7 +217,6 @@ export async function leaveTeam(teamId: string): Promise<void> {
 	await axios.put(
 		generateOcsUrl('apps/circles/circles/{circleId}/leave', { circleId: teamId }),
 		{},
-		{ headers: HEADERS },
 	)
 }
 
@@ -235,10 +226,7 @@ export async function leaveTeam(teamId: string): Promise<void> {
  * @param teamId - The team single id
  */
 export async function deleteTeam(teamId: string): Promise<void> {
-	await axios.delete(
-		generateOcsUrl('apps/circles/circles/{circleId}', { circleId: teamId }),
-		{ headers: HEADERS },
-	)
+	await axios.delete(generateOcsUrl('apps/circles/circles/{circleId}', { circleId: teamId }))
 }
 
 /**
@@ -247,6 +235,22 @@ export async function deleteTeam(teamId: string): Promise<void> {
 export interface TeamFolder {
 	id: number
 	mountPoint: string
+	quota: number | null
+}
+
+/** Team and its linked folder as exposed to administrators. */
+export interface AdminTeamFolder {
+	teamId: string
+	teamName: string
+	folder: TeamFolder | null
+}
+
+/**
+ * Fetch all teams and their optionally linked team folders for the admin settings view.
+ */
+export async function getAdminTeamFolders(): Promise<AdminTeamFolder[]> {
+	const { data } = await axios.get<OcsResponse<AdminTeamFolder[]>>(generateOcsUrl('/apps/circles/admin/teamfolders'))
+	return data.ocs.data
 }
 
 /**
@@ -260,10 +264,7 @@ export interface TeamFolder {
  */
 export async function getTeamFolder(teamId: string): Promise<TeamFolder | null> {
 	try {
-		const { data } = await axios.get<OcsResponse<TeamFolder>>(
-			generateOcsUrl('apps/circles/teams/{circleId}/folder', { circleId: teamId }),
-			{ headers: HEADERS },
-		)
+		const { data } = await axios.get<OcsResponse<TeamFolder>>(generateOcsUrl('apps/circles/teams/{circleId}/folder', { circleId: teamId }))
 		return data.ocs.data
 	} catch (error) {
 		if (error && typeof error === 'object'
@@ -282,13 +283,51 @@ export async function getTeamFolder(teamId: string): Promise<TeamFolder | null> 
  * returned. Requires team owner privileges.
  *
  * @param teamId - The team single id
+ * @param name - Optional team folder name
  * @return The created (or existing) team folder.
  */
-export async function upgradeTeamFolder(teamId: string): Promise<TeamFolder> {
+export async function upgradeTeamFolder(teamId: string, name?: string): Promise<TeamFolder> {
 	const { data } = await axios.post<OcsResponse<{ folderId: number, folder: TeamFolder }>>(
 		generateOcsUrl('apps/circles/teams/{circleId}/folder', { circleId: teamId }),
-		{},
-		{ headers: HEADERS },
+		{ name },
+	)
+	return data.ocs.data.folder
+}
+
+/**
+ * Fetch team folders that are not yet linked to a team.
+ *
+ * @param teamId - The team single id
+ */
+export async function getLinkableTeamFolders(teamId: string): Promise<TeamFolder[]> {
+	const { data } = await axios.get<OcsResponse<TeamFolder[]>>(generateOcsUrl('apps/circles/teams/{circleId}/folder/linkable', { circleId: teamId }))
+	return data.ocs.data
+}
+
+/**
+ * Link a team to a team folder.
+ *
+ * @param teamId - The team single id
+ * @param folderId - The id of the existing team folder
+ */
+export async function linkTeamFolder(teamId: string, folderId: number): Promise<TeamFolder> {
+	const { data } = await axios.post<OcsResponse<{ folderId: number, folder: TeamFolder }>>(
+		generateOcsUrl('apps/circles/teams/{circleId}/folder/link', { circleId: teamId }),
+		{ folderId },
+	)
+	return data.ocs.data.folder
+}
+
+/**
+ * Update the storage quota of the team folder linked to a team.
+ *
+ * @param teamId - The team single id
+ * @param quota - Quota in bytes, or zero for unlimited
+ */
+export async function updateTeamFolderQuota(teamId: string, quota: number): Promise<TeamFolder> {
+	const { data } = await axios.put<OcsResponse<{ folderId: number, folder: TeamFolder }>>(
+		generateOcsUrl('apps/circles/teams/{circleId}/folder/quota', { circleId: teamId }),
+		{ quota },
 	)
 	return data.ocs.data.folder
 }
@@ -331,7 +370,6 @@ export async function addTeamMembers(teamId: string, candidates: MemberCandidate
 	const res = await axios.post<OcsResponse<Record<string, unknown>>>(
 		generateOcsUrl('apps/circles/circles/{circleId}/members/multi', { circleId: teamId }),
 		{ members },
-		{ headers: HEADERS },
 	)
 	return Object.keys(res.data.ocs.data ?? {}).length
 }
