@@ -380,8 +380,8 @@ onMounted(loadTeamFolders)
 
 <template>
 	<NcSettingsSection
-		:name="t('circles', 'Team spaces')"
-		:description="t('circles', 'Configure the default storage quota for team spaces. Requires the Team Folders app to be installed and enabled.')">
+		:name="t('circles', 'Teams')"
+		:description="t('circles', 'Configure the default storage quota for team folders. Requires the Team Folders app to be installed and enabled.')">
 		<div class="team-folders__input-row">
 			<NcSelect
 				v-model="selectedQuota"
