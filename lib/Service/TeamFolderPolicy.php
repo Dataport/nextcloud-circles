@@ -88,7 +88,9 @@ class TeamFolderPolicy {
 	 */
 	public function getQuotas(): array {
 		$quotas = $this->appConfig->getAppValueArray(ConfigLexicon::TEAM_FOLDER_QUOTAS, [self::EVERYONE => self::DEFAULT_QUOTA]);
-		$quotas[self::EVERYONE] = self::DEFAULT_QUOTA;
+		if (!isset($quotas[self::EVERYONE]) || !is_int($quotas[self::EVERYONE]) || $quotas[self::EVERYONE] < 0) {
+			$quotas[self::EVERYONE] = self::DEFAULT_QUOTA;
+		}
 
 		return array_filter(
 			$quotas,
@@ -103,10 +105,6 @@ class TeamFolderPolicy {
 	public function setQuotas(array $quotas): void {
 		if (!array_key_exists(self::EVERYONE, $quotas)) {
 			throw new \InvalidArgumentException('everyone quota is required');
-		}
-
-		if ($quotas[self::EVERYONE] !== self::DEFAULT_QUOTA) {
-			throw new \InvalidArgumentException('everyone quota must be 100 MB');
 		}
 
 		foreach ($quotas as $teamId => $quota) {

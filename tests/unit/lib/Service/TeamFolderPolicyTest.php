@@ -101,11 +101,11 @@ class TeamFolderPolicyTest extends TestCase {
 		$this->assertSame([TeamFolderPolicy::EVERYONE => TeamFolderPolicy::DEFAULT_QUOTA], $this->service->getQuotas());
 	}
 
-	public function testGetQuotasNormalizesEveryoneToDefaultQuota(): void {
+	public function testGetQuotasPreservesConfiguredEveryoneQuota(): void {
 		$this->configureQuotas([TeamFolderPolicy::EVERYONE => 2147483648, 'engineering' => 5368709120]);
 
 		$this->assertSame([
-			TeamFolderPolicy::EVERYONE => TeamFolderPolicy::DEFAULT_QUOTA,
+			TeamFolderPolicy::EVERYONE => 2147483648,
 			'engineering' => 5368709120,
 		], $this->service->getQuotas());
 	}
@@ -161,10 +161,10 @@ class TeamFolderPolicyTest extends TestCase {
 		$this->service->setQuotas([TeamFolderPolicy::EVERYONE => -1]);
 	}
 
-	public function testSetQuotasRejectsChangedEveryoneQuota(): void {
-		$this->appConfig->expects($this->never())->method('setAppValueArray');
-		$this->expectException(\InvalidArgumentException::class);
-		$this->expectExceptionMessage('everyone quota must be 100 MB');
+	public function testSetQuotasStoresChangedEveryoneQuota(): void {
+		$this->appConfig->expects($this->once())
+			->method('setAppValueArray')
+			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, [TeamFolderPolicy::EVERYONE => 2147483648]);
 
 		$this->service->setQuotas([TeamFolderPolicy::EVERYONE => 2147483648]);
 	}

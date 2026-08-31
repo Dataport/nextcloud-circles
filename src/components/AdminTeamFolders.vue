@@ -37,12 +37,6 @@ interface TeamOption {
 	label: string
 }
 
-interface RawTeam {
-	id: string
-	name: string
-	displayName: string
-}
-
 interface QuotaRow extends TeamOption {
 	quota: QuotaOption
 }
@@ -62,12 +56,15 @@ const quotaPreset: QuotaOption[] = [
 
 const initialQuotas = loadState<Record<string, number>>('circles', 'teamFolderQuotas', { [everyone]: 104857600 })
 const rows = ref<QuotaRow[]>(Object.entries(initialQuotas)
-	.map(([teamId, quota]) => ({ id: teamId, label: teamId, quota: quotaOption(teamId === everyone ? 104857600 : quota) }))
+	.map(([teamId, quota]) => ({ id: teamId, label: teamId, quota: quotaOption(quota) }))
 	.sort((left, right) => left.id === everyone ? -1 : right.id === everyone ? 1 : left.label.localeCompare(right.label)))
 const teams = ref<TeamOption[]>([])
 const selectedQuotaTeam = ref<TeamOption | null>(null)
 const loadingTeams = ref(false)
 const saving = ref(false)
+const settingsTabs = ['teamFolders', 'defaultQuotas'] as const
+type SettingsTab = typeof settingsTabs[number]
+const activeTab = ref<SettingsTab>('teamFolders')
 
 const availableTeams = computed<TeamOption[]>(() => {
 	const mappedIds = new Set(rows.value.map((row) => row.id))
@@ -171,8 +168,14 @@ function onSortClick(key: TeamFolderSortKey) {
 /** Load the team folders shown in the admin settings table. */
 async function loadTeamFolders() {
 	loadingTeamFolders.value = true
+	loadingTeams.value = true
 	try {
 		teamFolders.value = await getAdminTeamFolders()
+		teams.value = teamFolders.value
+			.map((team) => ({ id: team.teamId, label: team.teamName }))
+			.sort((left, right) => left.label.localeCompare(right.label))
+		const labels = new Map(teams.value.map((team) => [team.id, team.label]))
+		rows.value = rows.value.map((row) => ({ ...row, label: labels.get(row.id) ?? row.label }))
 		teamFolderQuotas.value = Object.fromEntries(teamFolders.value.map((teamFolder) => [
 			teamFolder.teamId,
 			quotaOptionFromBytes(teamFolder.folder?.quota ?? 104857600),
@@ -183,6 +186,7 @@ async function loadTeamFolders() {
 		logger.error('Unable to load team folders', { error })
 	} finally {
 		loadingTeamFolders.value = false
+		loadingTeams.value = false
 	}
 }
 
@@ -366,27 +370,6 @@ async function updateAppConfig(key: string, value: string): Promise<boolean> {
 	}
 }
 
-/**
- * Load all teams of the current user.
- */
-async function loadTeams() {
-	loadingTeams.value = true
-	try {
-		const { data } = await axios.get<OCSResponse<RawTeam[]>>(generateOcsUrl('/apps/circles/circles') + '?limit=-1')
-		teams.value = (data.ocs.data ?? [])
-			.map((team) => ({ id: team.id, label: team.displayName || team.name || team.id }))
-			.sort((left, right) => left.label.localeCompare(right.label))
-
-		const labels = new Map(teams.value.map((team) => [team.id, team.label]))
-		rows.value = rows.value.map((row) => ({ ...row, label: labels.get(row.id) ?? row.label }))
-	} catch (error) {
-		logger.error('Unable to load teams', { error })
-		showError(t('circles', 'Unable to load teams'))
-	} finally {
-		loadingTeams.value = false
-	}
-}
-
 /** Add the selected team with the default quota. */
 function addTeam() {
 	if (selectedQuotaTeam.value === null) {
@@ -407,11 +390,8 @@ function removeTeam(teamId: string) {
 
 /** Save all team quota mappings. */
 async function onSaveQuotas() {
-	const quotas: Record<string, number> = { [everyone]: 104857600 }
+	const quotas: Record<string, number> = {}
 	for (const row of rows.value) {
-		if (row.id === everyone) {
-			continue
-		}
 		const bytes = row.quota.id === unlimitedQuota.id ? 0 : parseFileSize(row.quota.id, true)
 		if (bytes === null || bytes < 0) {
 			showError(t('circles', 'Quota must be a non-negative number.'))
@@ -427,8 +407,39 @@ async function onSaveQuotas() {
 	saving.value = false
 }
 
+/**
+ * Handle keyboard navigation between the settings tabs.
+ *
+ * @param event - Keyboard event from the active tab
+ */
+function onTabKeydown(event: KeyboardEvent) {
+	const currentIndex = settingsTabs.indexOf(activeTab.value)
+	let nextIndex: number
+
+	switch (event.key) {
+		case 'ArrowLeft':
+			nextIndex = (currentIndex - 1 + settingsTabs.length) % settingsTabs.length
+			break
+		case 'ArrowRight':
+			nextIndex = (currentIndex + 1) % settingsTabs.length
+			break
+		case 'Home':
+			nextIndex = 0
+			break
+		case 'End':
+			nextIndex = settingsTabs.length - 1
+			break
+		default:
+			return
+	}
+
+	event.preventDefault()
+	activeTab.value = settingsTabs[nextIndex]
+	const tabButtons = (event.currentTarget as HTMLElement).parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+	tabButtons?.[nextIndex]?.focus()
+}
+
 onMounted(() => {
-	void loadTeams()
 	void loadTeamFolders()
 })
 </script>
@@ -436,198 +447,278 @@ onMounted(() => {
 <template>
 	<NcSettingsSection
 		:name="t('circles', 'Teams')"
-		:description="t('circles', 'Configure default storage quotas for new team folders based on the team owner’s team memberships.')">
-		<div class="team-folders__add-row">
-			<NcSelect
-				v-model="selectedQuotaTeam"
-				:loading="loadingTeams"
-				:options="availableTeams"
-				:placeholder="t('circles', 'Select a team')"
-				class="team-folders__team-select" />
-			<NcButton
-				:disabled="selectedQuotaTeam === null"
-				@click="addTeam">
-				{{ t('circles', 'Add') }}
+		:description="t('circles', 'Configure default storage quotas and manage team folders.')">
+		<div class="team-folders__tabs" role="tablist" :aria-label="t('circles', 'Team folder settings')">
+			<button
+				id="team-folder-folders-tab"
+				type="button"
+				role="tab"
+				:aria-selected="activeTab === 'teamFolders'"
+				aria-controls="team-folder-folders-panel"
+				:tabindex="activeTab === 'teamFolders' ? 0 : -1"
+				:class="{ 'team-folders__tab--active': activeTab === 'teamFolders' }"
+				class="team-folders__tab"
+				@click="activeTab = 'teamFolders'"
+				@keydown="onTabKeydown">
+				{{ t('circles', 'Team folders') }}
+			</button>
+			<button
+				id="team-folder-default-quotas-tab"
+				type="button"
+				role="tab"
+				:aria-selected="activeTab === 'defaultQuotas'"
+				aria-controls="team-folder-default-quotas-panel"
+				:tabindex="activeTab === 'defaultQuotas' ? 0 : -1"
+				:class="{ 'team-folders__tab--active': activeTab === 'defaultQuotas' }"
+				class="team-folders__tab"
+				@click="activeTab = 'defaultQuotas'"
+				@keydown="onTabKeydown">
+				{{ t('circles', 'Default quotas') }}
+			</button>
+		</div>
+
+		<div
+			v-show="activeTab === 'defaultQuotas'"
+			id="team-folder-default-quotas-panel"
+			role="tabpanel"
+			aria-labelledby="team-folder-default-quotas-tab"
+			class="team-folders__panel">
+			<div class="team-folders__add-row">
+				<NcSelect
+					v-model="selectedQuotaTeam"
+					:loading="loadingTeams"
+					:options="availableTeams"
+					:placeholder="t('circles', 'Select a group')"
+					class="team-folders__team-select" />
+				<NcButton
+					:disabled="selectedQuotaTeam === null"
+					@click="addTeam">
+					{{ t('circles', 'Add') }}
+				</NcButton>
+			</div>
+
+			<div
+				class="team-folders__quota-mapping"
+				role="table"
+				:aria-label="t('circles', 'Default team folder quotas')">
+				<div class="team-folders__header" role="row">
+					<span role="columnheader">{{ t('circles', 'Group') }}</span>
+					<span role="columnheader">{{ t('circles', 'Default quota') }}</span>
+					<span role="columnheader">{{ t('circles', 'Options') }}</span>
+				</div>
+				<div
+					v-for="row in rows"
+					:key="row.id"
+					class="team-folders__row"
+					role="row">
+					<div class="team-folders__team" role="cell">
+						<strong>{{ row.id === everyone ? t('circles', 'Everyone') : row.label }}</strong>
+					</div>
+					<NcSelect
+						v-model="row.quota"
+						:aria-label="t('circles', 'Default quota for {group}', { group: row.label })"
+						:clearable="false"
+						:createOption="validateQuota"
+						:options="quotaOptions"
+						taggable
+						role="cell" />
+					<div class="team-folders__options" role="cell">
+						<NcActions v-if="row.id !== everyone" :aria-label="t('circles', 'Quota mapping actions')">
+							<NcActionButton closeAfterClick @click="removeTeam(row.id)">
+								<template #icon>
+									<IconDeleteOutline :size="20" />
+								</template>
+								{{ t('circles', 'Delete') }}
+							</NcActionButton>
+						</NcActions>
+					</div>
+				</div>
+			</div>
+
+			<NcButton variant="primary" :disabled="saving" @click="onSaveQuotas">
+				{{ saving ? t('circles', 'Saving …') : t('circles', 'Save') }}
 			</NcButton>
 		</div>
 
 		<div
-			class="team-folders__quota-mapping"
-			role="table"
-			:aria-label="t('circles', 'Default team folder quotas')">
-			<div class="team-folders__header" role="row">
-				<span role="columnheader">{{ t('circles', 'Team') }}</span>
-				<span role="columnheader">{{ t('circles', 'Default quota') }}</span>
-				<span role="columnheader">{{ t('circles', 'Options') }}</span>
-			</div>
-			<div
-				v-for="row in rows"
-				:key="row.id"
-				class="team-folders__row"
-				role="row">
-				<div class="team-folders__team" role="cell">
-					<strong>{{ row.id === everyone ? t('circles', 'Everyone') : row.label }}</strong>
-					<small v-if="row.id !== everyone && row.label !== row.id">{{ row.id }}</small>
-				</div>
-				<span v-if="row.id === everyone" class="team-folders__fixed-quota" role="cell">
-					{{ row.quota.label }}
-				</span>
-				<NcSelect
-					v-else
-					v-model="row.quota"
-					:aria-label="t('circles', 'Default quota for {team}', { team: row.label })"
-					:clearable="false"
-					:createOption="validateQuota"
-					:options="quotaOptions"
-					taggable
-					role="cell" />
-				<div class="team-folders__options" role="cell">
-					<NcActions v-if="row.id !== everyone" :aria-label="t('circles', 'Quota mapping actions')">
-						<NcActionButton closeAfterClick @click="removeTeam(row.id)">
-							<template #icon>
-								<IconDeleteOutline :size="20" />
-							</template>
-							{{ t('circles', 'Delete') }}
-						</NcActionButton>
-					</NcActions>
-				</div>
-			</div>
-		</div>
-
-		<NcButton variant="primary" :disabled="saving" @click="onSaveQuotas">
-			{{ saving ? t('circles', 'Saving …') : t('circles', 'Save') }}
-		</NcButton>
-	</NcSettingsSection>
-
-	<div class="team-folders__list">
-		<h3 class="team-folders__list-title">
-			{{ t('circles', 'Teams') }}
-		</h3>
-		<p v-if="loadingTeamFolders" class="team-folders__hint">
-			{{ t('circles', 'Loading team folders…') }}
-		</p>
-		<div v-if="!loadingTeamFolders" class="team-folders__scroll">
-			<table class="team-folders__table">
-				<thead>
-					<tr>
-						<th>
-							<button type="button" class="team-folders__sort-header" @click="onSortClick('teamName')">
-								{{ t('circles', 'Team') }}
-								<span v-if="sortKey === 'teamName'">{{ sortAscending ? '▲' : '▼' }}</span>
-							</button>
-						</th>
-						<th class="team-folders__mountpoint">
-							<button type="button" class="team-folders__sort-header" @click="onSortClick('mountPoint')">
-								{{ t('circles', 'Team folder') }}
-								<span v-if="sortKey === 'mountPoint'">{{ sortAscending ? '▲' : '▼' }}</span>
-							</button>
-						</th>
-						<th class="team-folders__quota">
-							{{ t('circles', 'Storage quota') }}
-						</th>
-						<th>
-							<span class="hidden-visually">{{ t('circles', 'Actions') }}</span>
-						</th>
-					</tr>
-				</thead>
-				<tbody>
-					<tr v-if="sortedTeamFolders.length === 0" class="team-folders__empty">
-						<td colspan="4">
-							{{ t('circles', 'No team folders found.') }}
-						</td>
-					</tr>
-					<tr v-for="teamFolder in sortedTeamFolders" v-else :key="teamFolder.teamId">
-						<td>
-							{{ teamFolder.teamName }}
-						</td>
-						<td class="team-folders__mountpoint">
-							{{ getMountPoint(teamFolder) }}
-						</td>
-						<td class="team-folders__quota">
-							<NcSelect
-								:modelValue="teamFolderQuotas[teamFolder.teamId]"
-								:options="quotaOptions"
-								:createOption="validateQuota"
-								:disabled="teamFolder.folder === null || updatingQuotaTeamIds.has(teamFolder.teamId)"
-								:aria-label="t('circles', 'Storage quota')"
-								:clearable="false"
-								taggable
-								class="team-folders__quota-select"
-								@update:modelValue="onUpdateTeamFolderQuota(teamFolder, $event)" />
-						</td>
-						<td class="team-folders__remove">
-							<NcActions forceMenu :aria-label="t('circles', 'Team actions')">
-								<NcActionButton
-									v-if="teamFolder.folder === null"
-									closeAfterClick
-									@click="openAssignDialog(teamFolder)">
-									{{ t('circles', 'Add') }}
-								</NcActionButton>
-								<NcActionButton closeAfterClick @click="confirmDeleteTeam(teamFolder)">
-									{{ t('circles', 'Delete team') }}
-								</NcActionButton>
-							</NcActions>
-						</td>
-					</tr>
-				</tbody>
-			</table>
-		</div>
-
-		<NcDialog
-			v-if="selectedAssignmentTeam"
-			:name="t('circles', 'Add a team folder')"
-			:open="selectedAssignmentTeam !== null"
-			@closing="closeAssignDialog">
-			<p class="team-folders__warning">
-				{{ t('circles', 'This team folder can only be assigned to this team. It cannot be assigned to another team, and this action cannot be undone.') }}
+			v-show="activeTab === 'teamFolders'"
+			id="team-folder-folders-panel"
+			role="tabpanel"
+			aria-labelledby="team-folder-folders-tab"
+			class="team-folders__panel team-folders__list">
+			<p v-if="loadingTeamFolders" class="team-folders__hint">
+				{{ t('circles', 'Loading team folders…') }}
 			</p>
-			<div class="team-folders__dialog-options">
-				<NcCheckboxRadioSwitch
-					v-model="assignmentMode"
-					value="create"
-					type="radio"
-					:disabled="assigningFolder">
-					{{ t('circles', 'Create a new team folder') }}
-				</NcCheckboxRadioSwitch>
-				<NcTextField
-					v-if="assignmentMode === 'create'"
-					v-model="folderName"
-					:label="t('circles', 'Team folder name')"
-					:disabled="assigningFolder"
-					required />
-				<NcCheckboxRadioSwitch
-					v-model="assignmentMode"
-					value="existing"
-					type="radio"
-					:disabled="assigningFolder">
-					{{ t('circles', 'Use an existing team folder') }}
-				</NcCheckboxRadioSwitch>
-				<NcSelect
-					v-if="assignmentMode === 'existing'"
-					v-model="selectedExistingFolder"
-					:options="linkableFolders"
-					:loading="loadingLinkableFolders"
-					:disabled="assigningFolder || loadingLinkableFolders"
-					:placeholder="t('circles', 'Select a team folder')"
-					label="mountPoint"
-					:clearable="false" />
+			<div v-if="!loadingTeamFolders" class="team-folders__scroll">
+				<table class="team-folders__table">
+					<thead>
+						<tr>
+							<th>
+								<button type="button" class="team-folders__sort-header" @click="onSortClick('teamName')">
+									{{ t('circles', 'Team') }}
+									<span v-if="sortKey === 'teamName'">{{ sortAscending ? '▲' : '▼' }}</span>
+								</button>
+							</th>
+							<th class="team-folders__mountpoint">
+								<button type="button" class="team-folders__sort-header" @click="onSortClick('mountPoint')">
+									{{ t('circles', 'Team folder') }}
+									<span v-if="sortKey === 'mountPoint'">{{ sortAscending ? '▲' : '▼' }}</span>
+								</button>
+							</th>
+							<th class="team-folders__quota">
+								{{ t('circles', 'Storage quota') }}
+							</th>
+							<th>
+								<span class="hidden-visually">{{ t('circles', 'Actions') }}</span>
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-if="sortedTeamFolders.length === 0" class="team-folders__empty">
+							<td colspan="4">
+								{{ t('circles', 'No team folders found.') }}
+							</td>
+						</tr>
+						<tr v-for="teamFolder in sortedTeamFolders" v-else :key="teamFolder.teamId">
+							<td>
+								{{ teamFolder.teamName }}
+							</td>
+							<td class="team-folders__mountpoint">
+								{{ getMountPoint(teamFolder) }}
+							</td>
+							<td class="team-folders__quota">
+								<NcSelect
+									:modelValue="teamFolderQuotas[teamFolder.teamId]"
+									:options="quotaOptions"
+									:createOption="validateQuota"
+									:disabled="teamFolder.folder === null || updatingQuotaTeamIds.has(teamFolder.teamId)"
+									:aria-label="t('circles', 'Storage quota')"
+									:clearable="false"
+									taggable
+									class="team-folders__quota-select"
+									@update:modelValue="onUpdateTeamFolderQuota(teamFolder, $event)" />
+							</td>
+							<td class="team-folders__remove">
+								<NcActions forceMenu :aria-label="t('circles', 'Team actions')">
+									<NcActionButton
+										v-if="teamFolder.folder === null"
+										closeAfterClick
+										@click="openAssignDialog(teamFolder)">
+										{{ t('circles', 'Add') }}
+									</NcActionButton>
+									<NcActionButton closeAfterClick @click="confirmDeleteTeam(teamFolder)">
+										{{ t('circles', 'Delete team') }}
+									</NcActionButton>
+								</NcActions>
+							</td>
+						</tr>
+					</tbody>
+				</table>
 			</div>
-			<template #actions>
-				<NcButton :disabled="assigningFolder" @click="closeAssignDialog">
-					{{ t('circles', 'Cancel') }}
-				</NcButton>
-				<NcButton
-					variant="primary"
-					:disabled="assigningFolder || (assignmentMode === 'create' ? folderName.trim() === '' : selectedExistingFolder === null)"
-					@click="assignTeamFolder">
-					{{ t('circles', 'Add') }}
-				</NcButton>
-			</template>
-		</NcDialog>
-	</div>
+
+			<NcDialog
+				v-if="selectedAssignmentTeam"
+				:name="t('circles', 'Add a team folder')"
+				:open="selectedAssignmentTeam !== null"
+				@closing="closeAssignDialog">
+				<p class="team-folders__warning">
+					{{ t('circles', 'This team folder can only be assigned to this team. It cannot be assigned to another team, and this action cannot be undone.') }}
+				</p>
+				<div class="team-folders__dialog-options">
+					<NcCheckboxRadioSwitch
+						v-model="assignmentMode"
+						value="create"
+						type="radio"
+						:disabled="assigningFolder">
+						{{ t('circles', 'Create a new team folder') }}
+					</NcCheckboxRadioSwitch>
+					<NcTextField
+						v-if="assignmentMode === 'create'"
+						v-model="folderName"
+						:label="t('circles', 'Team folder name')"
+						:disabled="assigningFolder"
+						required />
+					<NcCheckboxRadioSwitch
+						v-model="assignmentMode"
+						value="existing"
+						type="radio"
+						:disabled="assigningFolder">
+						{{ t('circles', 'Use an existing team folder') }}
+					</NcCheckboxRadioSwitch>
+					<NcSelect
+						v-if="assignmentMode === 'existing'"
+						v-model="selectedExistingFolder"
+						:options="linkableFolders"
+						:loading="loadingLinkableFolders"
+						:disabled="assigningFolder || loadingLinkableFolders"
+						:placeholder="t('circles', 'Select a team folder')"
+						label="mountPoint"
+						:clearable="false" />
+				</div>
+				<template #actions>
+					<NcButton :disabled="assigningFolder" @click="closeAssignDialog">
+						{{ t('circles', 'Cancel') }}
+					</NcButton>
+					<NcButton
+						variant="primary"
+						:disabled="assigningFolder || (assignmentMode === 'create' ? folderName.trim() === '' : selectedExistingFolder === null)"
+						@click="assignTeamFolder">
+						{{ t('circles', 'Add') }}
+					</NcButton>
+				</template>
+			</NcDialog>
+		</div>
+	</NcSettingsSection>
 </template>
 
 <style scoped>
+.team-folders__tabs {
+	display: flex;
+	gap: 24px;
+	margin-bottom: 24px;
+	border-bottom: 1px solid var(--color-border);
+}
+
+.team-folders__tab {
+	position: relative;
+	padding: 10px 4px 9px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--color-text-maxcontrast);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.team-folders__tab:hover,
+.team-folders__tab:focus-visible {
+	color: var(--color-main-text);
+}
+
+.team-folders__tab:focus-visible {
+	outline: 2px solid var(--color-main-text);
+	outline-offset: 2px;
+}
+
+.team-folders__tab--active {
+	color: var(--color-main-text);
+}
+
+.team-folders__tab--active::after {
+	position: absolute;
+	right: 0;
+	bottom: -1px;
+	left: 0;
+	height: 3px;
+	background-color: var(--color-primary-element);
+	content: '';
+}
+
+.team-folders__panel {
+	width: 100%;
+}
+
 .team-folders__add-row {
 	display: flex;
 	gap: 8px;
@@ -668,19 +759,10 @@ onMounted(() => {
 	flex-direction: column;
 }
 
-.team-folders__team strong,
-.team-folders__team small {
+.team-folders__team strong {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-.team-folders__team small {
-	color: var(--color-text-maxcontrast);
-}
-
-.team-folders__fixed-quota {
-	padding: 0 12px;
 }
 
 .team-folders__options {
@@ -727,15 +809,7 @@ onMounted(() => {
 }
 
 .team-folders__list {
-	margin: 24px calc(var(--default-grid-baseline) * 7);
-}
-
-.team-folders__list-title {
-	border-bottom: 1px solid var(--color-border);
 	margin: 0;
-	padding-bottom: 8px;
-	font-size: 16px;
-	font-weight: 600;
 }
 
 .team-folders__scroll {

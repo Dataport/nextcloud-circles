@@ -19,12 +19,15 @@ use PHPUnit\Framework\TestCase;
 class SettingsControllerTest extends TestCase {
 	private SettingsController $controller;
 	private TeamFolderPolicy&MockObject $teamFolderPolicy;
+	/** @var array<string, int> */
+	private array $storedQuotas;
 
 	protected function setUp(): void {
 		parent::setUp();
 
+		$this->storedQuotas = [TeamFolderPolicy::EVERYONE => TeamFolderPolicy::DEFAULT_QUOTA];
 		$this->teamFolderPolicy = $this->createMock(TeamFolderPolicy::class);
-		$this->teamFolderPolicy->method('getQuotas')->willReturn([TeamFolderPolicy::EVERYONE => TeamFolderPolicy::DEFAULT_QUOTA]);
+		$this->teamFolderPolicy->method('getQuotas')->willReturnCallback(fn (): array => $this->storedQuotas);
 		$this->controller = new SettingsController(
 			'circles',
 			$this->createMock(IRequest::class),
@@ -35,6 +38,7 @@ class SettingsControllerTest extends TestCase {
 
 	public function testSetValueStoresQuotaMapping(): void {
 		$quotas = [TeamFolderPolicy::EVERYONE => 104857600, 'engineering' => 5368709120];
+		$this->storedQuotas = $quotas;
 		$this->teamFolderPolicy->expects($this->once())->method('setQuotas')->with($quotas);
 
 		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_QUOTAS, json_encode($quotas, JSON_THROW_ON_ERROR));
@@ -60,13 +64,15 @@ class SettingsControllerTest extends TestCase {
 		$this->assertSame('everyone quota is required', $response->getData()['data']['message']);
 	}
 
-	public function testSetValueRejectsChangedEveryoneQuota(): void {
-		$this->teamFolderPolicy->method('setQuotas')->willThrowException(new \InvalidArgumentException('everyone quota must be 100 MB'));
+	public function testSetValueStoresChangedEveryoneQuota(): void {
+		$quotas = [TeamFolderPolicy::EVERYONE => 2147483648];
+		$this->storedQuotas = $quotas;
+		$this->teamFolderPolicy->expects($this->once())->method('setQuotas')->with($quotas);
 
 		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_QUOTAS, '{"everyone":2147483648}');
 
-		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertSame('everyone quota must be 100 MB', $response->getData()['data']['message']);
+		$this->assertSame(Http::STATUS_OK, $response->getStatus());
+		$this->assertSame($quotas, $response->getData()[ConfigLexicon::TEAM_FOLDER_QUOTAS]);
 	}
 
 	public function testSetValueRejectsUnsupportedKey(): void {
