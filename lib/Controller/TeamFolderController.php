@@ -69,7 +69,7 @@ class TeamFolderController extends OCSController {
 				displayName: $circle->getDisplayName(),
 				link: null,
 			),
-			$this->policy->getDefaultQuota(),
+			$this->policy->getQuotaForCircle($circle),
 		);
 
 		return new DataResponse([

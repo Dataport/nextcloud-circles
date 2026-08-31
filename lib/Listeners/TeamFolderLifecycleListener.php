@@ -32,6 +32,9 @@ class TeamFolderLifecycleListener implements IEventListener {
 	#[\Override]
 	public function handle(Event $event): void {
 		if ($event instanceof DestroyingCircleEvent) {
+			$circle = $event->getCircle();
+			$this->policy->removeTeam($circle->getSingleId());
+
 			$provider = $this->teamManager->getTeamFolderProvider();
 			if ($provider === null) {
 				return;
@@ -41,7 +44,6 @@ class TeamFolderLifecycleListener implements IEventListener {
 			// team folder and its contents rather than unlinking it. Unlinking
 			// would leave an orphaned folder that no team owns anymore and
 			// that is hard for an admin to discover and clean up.
-			$circle = $event->getCircle();
 			$provider->removeTeamFolder($circle->getSingleId());
 			return;
 		}
@@ -67,7 +69,7 @@ class TeamFolderLifecycleListener implements IEventListener {
 					displayName: $circle->getDisplayName(),
 					link: null,
 				),
-				$this->policy->getDefaultQuota(),
+				$this->policy->getQuotaForCircle($circle),
 			);
 		} catch (\Throwable $e) {
 			$this->logger->error('Failed to auto-create team folder', [

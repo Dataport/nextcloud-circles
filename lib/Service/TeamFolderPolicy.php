@@ -10,7 +10,9 @@ declare(strict_types=1);
 namespace OCA\Circles\Service;
 
 use OCA\Circles\ConfigLexicon;
+use OCA\Circles\Db\MembershipRequest;
 use OCA\Circles\Model\Circle;
+use OCA\Circles\Model\Membership;
 use OCP\AppFramework\Services\IAppConfig;
 
 /**
@@ -18,7 +20,7 @@ use OCP\AppFramework\Services\IAppConfig;
  *
  * This class owns the *policy* for team-folder creation:
  *  - the `team_folder_auto_create` app config toggle (occ only, not admin UI),
- *  - the `team_folder_default_quota` app config value,
+ *  - the `team_folder_quotas` app config mapping,
  *  - the circle-type eligibility rules (personal/hidden/system/backend circles
  *    are excluded).
  *
@@ -29,8 +31,12 @@ use OCP\AppFramework\Services\IAppConfig;
  * never persists a Groupfolders identifier.
  */
 class TeamFolderPolicy {
+	public const EVERYONE = 'everyone';
+	public const DEFAULT_QUOTA = 104857600;
+
 	public function __construct(
 		private IAppConfig $appConfig,
+		private MembershipRequest $membershipRequest,
 	) {
 	}
 
@@ -77,7 +83,78 @@ class TeamFolderPolicy {
 		return $this->isEligibleCircle($circle);
 	}
 
-	public function getDefaultQuota(): int {
-		return $this->appConfig->getAppValueInt(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, 0);
+	/**
+	 * @return array<string, int>
+	 */
+	public function getQuotas(): array {
+		$quotas = $this->appConfig->getAppValueArray(ConfigLexicon::TEAM_FOLDER_QUOTAS, [self::EVERYONE => self::DEFAULT_QUOTA]);
+		$quotas[self::EVERYONE] = self::DEFAULT_QUOTA;
+
+		return array_filter(
+			$quotas,
+			static fn (mixed $quota, mixed $teamId): bool => is_string($teamId) && $teamId !== '' && is_int($quota) && $quota >= 0,
+			ARRAY_FILTER_USE_BOTH,
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $quotas
+	 */
+	public function setQuotas(array $quotas): void {
+		if (!array_key_exists(self::EVERYONE, $quotas)) {
+			throw new \InvalidArgumentException('everyone quota is required');
+		}
+
+		if ($quotas[self::EVERYONE] !== self::DEFAULT_QUOTA) {
+			throw new \InvalidArgumentException('everyone quota must be 100 MB');
+		}
+
+		foreach ($quotas as $teamId => $quota) {
+			if (!is_string($teamId) || trim($teamId) === '' || !is_int($quota) || $quota < 0) {
+				throw new \InvalidArgumentException('quotas must map non-empty team IDs to non-negative integers');
+			}
+		}
+
+		$this->appConfig->setAppValueArray(ConfigLexicon::TEAM_FOLDER_QUOTAS, $quotas);
+	}
+
+	public function removeTeam(string $teamId): void {
+		if ($teamId === self::EVERYONE) {
+			return;
+		}
+
+		$quotas = $this->getQuotas();
+		if (array_key_exists($teamId, $quotas)) {
+			unset($quotas[$teamId]);
+			$this->setQuotas($quotas);
+		}
+	}
+
+	/**
+	 * Resolve the highest configured quota for the local team owner.
+	 * Unlimited (0) takes precedence over every finite quota.
+	 */
+	public function getQuotaForCircle(Circle $circle): int {
+		$quotas = $this->getQuotas();
+		$fallback = $quotas[self::EVERYONE];
+		$owner = $circle->getOwner();
+		if (!$owner->isLocal()) {
+			return $fallback;
+		}
+
+		$teamIds = array_map(
+			static fn (Membership $membership): string => $membership->getCircleId(),
+			$this->membershipRequest->getMemberships($owner->getSingleId()),
+		);
+		$matches = array_intersect_key($quotas, array_flip($teamIds));
+		if ($matches === []) {
+			return $fallback;
+		}
+
+		if (in_array(0, $matches, true)) {
+			return 0;
+		}
+
+		return max($matches);
 	}
 }

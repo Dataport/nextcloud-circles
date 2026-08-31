@@ -16,7 +16,9 @@ use OCP\AppFramework\OCS\OCSException;
 use OCP\IRequest;
 use OCP\IUser;
 use OCP\IUserSession;
+use OCP\Teams\ITeamFolderProvider;
 use OCP\Teams\ITeamManager;
+use OCP\Teams\TeamFolder;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
@@ -71,5 +73,29 @@ class TeamFolderControllerTest extends TestCase {
 		$this->expectExceptionMessage('This team cannot have a team space');
 
 		$this->controller->upgradeTeamFolder('team1');
+	}
+
+	public function testUpgradeTeamFolderUsesOwnerTeamQuota(): void {
+		$user = $this->createMock(IUser::class);
+		$user->method('getUID')->willReturn('admin');
+		$this->userSession->method('getUser')->willReturn($user);
+		$circle = $this->createMock(Circle::class);
+		$circle->method('getSingleId')->willReturn('team1');
+		$circle->method('getDisplayName')->willReturn('Engineering');
+		$this->circleRequest->method('getCircle')->with('team1')->willReturn($circle);
+		$this->policy->method('isTeamFolderProvisioningEnabled')->willReturn(true);
+		$this->policy->method('isEligibleCircle')->with($circle)->willReturn(true);
+		$this->policy->expects($this->once())->method('getQuotaForCircle')->with($circle)->willReturn(5368709120);
+		$this->permissionService->expects($this->once())->method('userMustBeTeamOwnerOrServerAdmin')->with('admin', 'team1');
+
+		$folder = new TeamFolder(42, 'Engineering', 5368709120);
+		$provider = $this->createMock(ITeamFolderProvider::class);
+		$provider->expects($this->once())->method('createTeamFolder')->with($this->isInstanceOf(\OCP\Teams\Team::class), 5368709120)->willReturn($folder);
+		$this->teamManager->method('getTeamFolderProvider')->willReturn($provider);
+
+		$response = $this->controller->upgradeTeamFolder('team1');
+
+		$this->assertSame(42, $response->getData()['folderId']);
+		$this->assertSame(5368709120, $response->getData()['folder']['quota']);
 	}
 }

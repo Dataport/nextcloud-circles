@@ -11,6 +11,7 @@ namespace OCA\Circles\Controller;
 
 use OCA\Circles\ConfigLexicon;
 use OCA\Circles\Service\ConfigService;
+use OCA\Circles\Service\TeamFolderPolicy;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\AppFramework\OCSController;
@@ -22,6 +23,7 @@ class SettingsController extends OCSController {
 		string $appName,
 		IRequest $request,
 		private readonly IAppConfig $appConfig,
+		private readonly TeamFolderPolicy $teamFolderPolicy,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -40,12 +42,17 @@ class SettingsController extends OCSController {
 			return $this->getValues();
 		}
 
-		if ($key === ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA) {
-			if (!is_numeric($value) || (int)$value < 0) {
-				return new DataResponse(['data' => ['message' => 'quota must be a non-negative integer']], Http::STATUS_BAD_REQUEST);
+		if ($key === ConfigLexicon::TEAM_FOLDER_QUOTAS) {
+			try {
+				$quotas = json_decode($value, true, flags: JSON_THROW_ON_ERROR);
+				if (!is_array($quotas) || array_is_list($quotas)) {
+					throw new \InvalidArgumentException('quotas must be an object');
+				}
+				$this->teamFolderPolicy->setQuotas($quotas);
+			} catch (\JsonException|\InvalidArgumentException $e) {
+				return new DataResponse(['data' => ['message' => $e->getMessage()]], Http::STATUS_BAD_REQUEST);
 			}
 
-			$this->appConfig->setAppValueInt(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, (int)$value);
 			return $this->getValues();
 		}
 
@@ -56,7 +63,7 @@ class SettingsController extends OCSController {
 		return new DataResponse([
 			ConfigLexicon::FEDERATED_TEAMS_FRONTAL => $this->getFrontalValue() ?? '',
 			ConfigLexicon::FEDERATED_TEAMS_ENABLED => $this->appConfig->getAppValueBool(ConfigLexicon::FEDERATED_TEAMS_ENABLED),
-			ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA => $this->appConfig->getAppValueInt(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, 0),
+			ConfigLexicon::TEAM_FOLDER_QUOTAS => $this->teamFolderPolicy->getQuotas(),
 		]);
 	}
 
