@@ -14,10 +14,21 @@ interface DashboardRegisterContext {
 type DashboardRegisterCallback = (el: HTMLElement, context: DashboardRegisterContext) => void
 
 declare global {
+	interface RenderedFilesApp {
+		destroy: () => void
+	}
+
 	interface Window {
 		OCA: {
 			Dashboard: {
 				register: (appid: string, callback: DashboardRegisterCallback) => void
+			}
+		}
+
+		// Provided by the Files app once its scripts are loaded (see `OCA\Files\Event\LoadFilesApp`).
+		OCP: {
+			Files: {
+				renderFilesApp: (el: HTMLElement, viewId: string) => RenderedFilesApp
 			}
 		}
 	}

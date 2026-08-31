@@ -10,7 +10,7 @@ import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import NcEmptyContent from '@nextcloud/vue/components/NcEmptyContent'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
-import TeamFolderWidget from '../components/TeamFolderWidget.vue'
+import TeamFilesEmbed from '../components/TeamFilesEmbed.vue'
 import { logger } from '../../logger.ts'
 import { getTeamFolder } from '../api.ts'
 import { router } from '../router.ts'
@@ -70,10 +70,10 @@ watch(() => props.teamId, loadTeamFolder, { immediate: true })
 			:name="t('circles', 'Team space unavailable')"
 			:description="t('circles', 'Could not load the team space. Please try again later.')" />
 
-		<TeamFolderWidget
+		<TeamFilesEmbed
 			v-else-if="mountPoint && folderId"
 			:mountPoint="mountPoint"
-			:rootFolderId="folderId" />
+			:folderId="folderId" />
 	</div>
 </template>
 

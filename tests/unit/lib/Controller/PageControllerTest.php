@@ -12,9 +12,11 @@ use OCA\Circles\AppInfo\Application;
 use OCA\Circles\Controller\PageController;
 use OCA\Circles\Service\ConfigService;
 use OCA\Circles\Service\TeamFolderPolicy;
+use OCA\Files\Event\LoadFilesApp;
 use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
+use OCP\EventDispatcher\IEventDispatcher;
 use OCP\IRequest;
 use OCP\Teams\ITeamFolderProvider;
 use OCP\Teams\ITeamManager;
@@ -27,6 +29,7 @@ final class PageControllerTest extends TestCase {
 	private IInitialState&MockObject $initialState;
 	private ITeamManager&MockObject $teamManager;
 	private TeamFolderPolicy&MockObject $teamFolderPolicy;
+	private IEventDispatcher&MockObject $eventDispatcher;
 	private PageController $pageController;
 
 	#[\Override]
@@ -38,6 +41,7 @@ final class PageControllerTest extends TestCase {
 		$this->initialState = $this->createMock(IInitialState::class);
 		$this->teamManager = $this->createMock(ITeamManager::class);
 		$this->teamFolderPolicy = $this->createMock(TeamFolderPolicy::class);
+		$this->eventDispatcher = $this->createMock(IEventDispatcher::class);
 
 		$this->pageController = new PageController(
 			$this->request,
@@ -45,6 +49,7 @@ final class PageControllerTest extends TestCase {
 			$this->initialState,
 			$this->teamManager,
 			$this->teamFolderPolicy,
+			$this->eventDispatcher,
 		);
 	}
 
@@ -66,6 +71,10 @@ final class PageControllerTest extends TestCase {
 		$this->teamFolderPolicy->expects($this->once())
 			->method('isTeamFolderProvisioningEnabled')
 			->willReturn(true);
+
+		$this->eventDispatcher->expects($this->once())
+			->method('dispatchTyped')
+			->with($this->isInstanceOf(LoadFilesApp::class));
 
 		$provided = [];
 		$this->initialState->expects($this->exactly(2))
@@ -131,6 +140,8 @@ final class PageControllerTest extends TestCase {
 			->method('getTeamFolderProvider');
 		$this->teamFolderPolicy->expects($this->never())
 			->method('isTeamFolderProvisioningEnabled');
+		$this->eventDispatcher->expects($this->never())
+			->method('dispatchTyped');
 
 		$result = $this->pageController->index();
 
