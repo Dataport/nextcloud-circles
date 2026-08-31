@@ -21,7 +21,6 @@ import NcButton from '@nextcloud/vue/components/NcButton'
 import NcCheckboxRadioSwitch from '@nextcloud/vue/components/NcCheckboxRadioSwitch'
 import NcDialog from '@nextcloud/vue/components/NcDialog'
 import NcSelect from '@nextcloud/vue/components/NcSelect'
-import NcSettingsSection from '@nextcloud/vue/components/NcSettingsSection'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import IconDeleteOutline from 'vue-material-design-icons/TrashCanOutline.vue'
 import { logger } from '../logger.ts'
@@ -445,9 +444,13 @@ onMounted(() => {
 </script>
 
 <template>
-	<NcSettingsSection
-		:name="t('circles', 'Teams')"
-		:description="t('circles', 'Configure default storage quotas and manage team folders.')">
+	<section class="team-folders__settings">
+		<h2 class="team-folders__title">
+			{{ t('circles', 'Teams') }}
+		</h2>
+		<p class="team-folders__description">
+			{{ t('circles', 'Configure default storage quotas and manage team folders.') }}
+		</p>
 		<div class="team-folders__tabs" role="tablist" :aria-label="t('circles', 'Team folder settings')">
 			<button
 				id="team-folder-folders-tab"
@@ -668,10 +671,26 @@ onMounted(() => {
 				</template>
 			</NcDialog>
 		</div>
-	</NcSettingsSection>
+	</section>
 </template>
 
 <style scoped>
+.team-folders__settings {
+	box-sizing: border-box;
+	width: 100%;
+	padding: calc(var(--default-grid-baseline) * 7);
+}
+
+.team-folders__title {
+	margin-top: 0;
+}
+
+.team-folders__description {
+	margin-top: -0.2em;
+	margin-bottom: 1em;
+	color: var(--color-text-maxcontrast);
+}
+
 .team-folders__tabs {
 	display: flex;
 	gap: 24px;
