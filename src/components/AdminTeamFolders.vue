@@ -54,6 +54,7 @@ const quotaPreset: QuotaOption[] = [
 ]
 
 const initialQuotas = loadState<Record<string, number>>('circles', 'teamFolderQuotas', { [everyone]: 104857600 })
+const teamFolderAutoCreateEnabled = loadState<boolean>('circles', 'teamFolderAutoCreateEnabled', true)
 const rows = ref<QuotaRow[]>(Object.entries(initialQuotas)
 	.map(([teamId, quota]) => ({ id: teamId, label: teamId, quota: quotaOption(quota) }))
 	.sort((left, right) => left.id === everyone ? -1 : right.id === everyone ? 1 : left.label.localeCompare(right.label)))
@@ -486,6 +487,9 @@ onMounted(() => {
 			role="tabpanel"
 			aria-labelledby="team-folder-default-quotas-tab"
 			class="team-folders__panel">
+			<p v-if="!teamFolderAutoCreateEnabled" class="team-folders__warning">
+				{{ t('circles', 'Automatic team folder creation is disabled. These quota mappings will not apply until it is enabled again through the occ command.') }}
+			</p>
 			<div class="team-folders__add-row">
 				<NcSelect
 					v-model="selectedQuotaTeam"

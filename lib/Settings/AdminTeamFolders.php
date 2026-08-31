@@ -34,6 +34,7 @@ class AdminTeamFolders implements IDelegatedSettings {
 	 */
 	public function getForm(): TemplateResponse {
 		$this->initialState->provideInitialState('teamFolderQuotas', $this->teamFolderPolicy->getQuotas());
+		$this->initialState->provideInitialState('teamFolderAutoCreateEnabled', $this->teamFolderPolicy->isTeamFolderProvisioningEnabled());
 
 		Util::addStyle(Application::APP_ID, 'teams-settings-team-folders');
 		Util::addScript(Application::APP_ID, 'teams-settings-team-folders');
