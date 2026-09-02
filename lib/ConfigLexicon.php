@@ -58,6 +58,7 @@ class ConfigLexicon implements ILexicon {
 			new Entry(key: self::FEDERATED_TEAMS_FRONTAL, type: ValueType::STRING, defaultRaw: '', definition: 'domain name used to auth public request', lazy: true),
 			new Entry(key: self::REMOVE_SHARE_TOKENS_DONE, type: ValueType::BOOL, defaultRaw: false, definition: 'whether the remove share tokens repair step has already been executed', lazy: true),
 			new Entry(key: self::TEAM_FOLDER_AUTO_CREATE, type: ValueType::BOOL, defaultRaw: true, definition: 'whether Circles auto-creates team folders and allows UI/API upgrade (not exposed in admin UI)', lazy: true),
+			new Entry(key: self::TEAM_FOLDER_DEFAULT_QUOTA, type: ValueType::INT, defaultRaw: 0, definition: 'default quota in bytes for auto-created team folders (0 means unlimited)', lazy: true),
 			new Entry(key: self::TEAM_FOLDER_QUOTAS, type: ValueType::ARRAY, defaultRaw: ['everyone' => 104857600], definition: 'default team folder quotas in bytes by team ID (0 means unlimited)', lazy: true),
 			// OIDC
 			new Entry(key: self::OIDC_ENABLED, type: ValueType::BOOL, defaultRaw: false, definition: 'disable/enable OIDC integration', lazy: true),
