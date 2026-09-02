@@ -33,6 +33,7 @@ class AdminTeamFolders implements IDelegatedSettings {
 	 * @return TemplateResponse
 	 */
 	public function getForm(): TemplateResponse {
+		$this->initialState->provideInitialState('teamFolderDefaultQuota', $this->teamFolderPolicy->getDefaultQuota());
 		$this->initialState->provideInitialState('teamFolderQuotas', $this->teamFolderPolicy->getQuotas());
 		$this->initialState->provideInitialState('teamFolderAutoCreateEnabled', $this->teamFolderPolicy->isTeamFolderProvisioningEnabled());
 
@@ -67,6 +68,7 @@ class AdminTeamFolders implements IDelegatedSettings {
 	public function getAuthorizedAppConfig(): array {
 		return [
 			Application::APP_ID => [
+				ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA,
 				ConfigLexicon::TEAM_FOLDER_QUOTAS,
 			],
 		];

@@ -40,8 +40,6 @@ interface QuotaRow extends TeamOption {
 	quota: QuotaOption
 }
 
-const everyone = 'everyone'
-
 const unlimitedQuota: QuotaOption = {
 	id: '0',
 	label: t('circles', 'Unlimited'),
@@ -53,11 +51,13 @@ const quotaPreset: QuotaOption[] = [
 	{ id: '10 GB', label: '10 GB' },
 ]
 
-const initialQuotas = loadState<Record<string, number>>('circles', 'teamFolderQuotas', { [everyone]: 104857600 })
+const initialDefaultQuota = loadState<number>('circles', 'teamFolderDefaultQuota', 104857600)
+const initialQuotas = loadState<Record<string, number>>('circles', 'teamFolderQuotas', {})
 const teamFolderAutoCreateEnabled = loadState<boolean>('circles', 'teamFolderAutoCreateEnabled', true)
+const defaultQuota = ref<QuotaOption>(quotaOption(initialDefaultQuota))
 const rows = ref<QuotaRow[]>(Object.entries(initialQuotas)
 	.map(([teamId, quota]) => ({ id: teamId, label: teamId, quota: quotaOption(quota) }))
-	.sort((left, right) => left.id === everyone ? -1 : right.id === everyone ? 1 : left.label.localeCompare(right.label)))
+	.sort((left, right) => left.label.localeCompare(right.label)))
 const teams = ref<TeamOption[]>([])
 const selectedQuotaTeam = ref<TeamOption | null>(null)
 const loadingTeams = ref(false)
@@ -385,11 +385,17 @@ function addTeam() {
  * @param teamId - Team ID to remove
  */
 function removeTeam(teamId: string) {
-	rows.value = rows.value.filter((row) => row.id !== teamId || row.id === everyone)
+	rows.value = rows.value.filter((row) => row.id !== teamId)
 }
 
 /** Save all team quota mappings. */
 async function onSaveQuotas() {
+	const defaultBytes = defaultQuota.value.id === unlimitedQuota.id ? 0 : parseFileSize(defaultQuota.value.id, true)
+	if (defaultBytes === null || defaultBytes < 0) {
+		showError(t('circles', 'Quota must be a non-negative number.'))
+		return
+	}
+
 	const quotas: Record<string, number> = {}
 	for (const row of rows.value) {
 		const bytes = row.quota.id === unlimitedQuota.id ? 0 : parseFileSize(row.quota.id, true)
@@ -401,7 +407,8 @@ async function onSaveQuotas() {
 	}
 
 	saving.value = true
-	if (await updateAppConfig('team_folder_quotas', JSON.stringify(quotas))) {
+	const defaultSaved = await updateAppConfig('team_folder_default_quota', String(Math.round(defaultBytes)))
+	if (defaultSaved && await updateAppConfig('team_folder_quotas', JSON.stringify(quotas))) {
 		showSuccess(t('circles', 'Changed default team folder quotas'))
 	}
 	saving.value = false
@@ -490,6 +497,22 @@ onMounted(() => {
 			<p v-if="!teamFolderAutoCreateEnabled" class="team-folders__warning">
 				{{ t('circles', 'Automatic team folder creation is disabled. These quota mappings will not apply until it is enabled again through the occ command.') }}
 			</p>
+			<div class="team-folders__default-quota">
+				<p>{{ t('circles', 'Configure the default storage quota for team spaces. Requires the Team Folders app to be installed and enabled.') }}</p>
+				<NcSelect
+					v-model="defaultQuota"
+					:aria-label="t('circles', 'Default quota for all groups')"
+					:clearable="false"
+					:createOption="validateQuota"
+					:input-label="t('circles', 'Default quota')"
+					:options="quotaOptions"
+					:placeholder="t('circles', 'Select default quota')"
+					taggable />
+				<p class="team-folders__hint">
+					{{ t('circles', 'Default storage quota applied to each auto-created team space. Use 0 for unlimited storage.') }}
+				</p>
+			</div>
+			<h3>{{ t('circles', 'Groupspecific quota') }}</h3>
 			<div class="team-folders__add-row">
 				<NcSelect
 					v-model="selectedQuotaTeam"
@@ -519,7 +542,7 @@ onMounted(() => {
 					class="team-folders__row"
 					role="row">
 					<div class="team-folders__team" role="cell">
-						<strong>{{ row.id === everyone ? t('circles', 'Everyone') : row.label }}</strong>
+						<strong>{{ row.label }}</strong>
 					</div>
 					<NcSelect
 						v-model="row.quota"
@@ -530,7 +553,7 @@ onMounted(() => {
 						taggable
 						role="cell" />
 					<div class="team-folders__options" role="cell">
-						<NcActions v-if="row.id !== everyone" :aria-label="t('circles', 'Quota mapping actions')">
+						<NcActions :aria-label="t('circles', 'Quota mapping actions')">
 							<NcActionButton closeAfterClick @click="removeTeam(row.id)">
 								<template #icon>
 									<IconDeleteOutline :size="20" />

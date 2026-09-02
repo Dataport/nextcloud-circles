@@ -93,25 +93,31 @@ class TeamFolderPolicyTest extends TestCase {
 		$this->assertFalse($service->isEligibleCircle($this->createCircle(Circle::CFG_PERSONAL)));
 	}
 
-	public function testGetQuotasDefaultsToEveryone(): void {
+	public function testGetDefaultQuotaUsesConfiguredValue(): void {
+		$this->appConfig->method('getAppValueInt')
+			->with(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, TeamFolderPolicy::DEFAULT_QUOTA)
+			->willReturn(2147483648);
+
+		$this->assertSame(2147483648, $this->service->getDefaultQuota());
+	}
+
+	public function testGetQuotasDefaultsToEmptyArray(): void {
 		$this->appConfig->method('getAppValueArray')
-			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, [TeamFolderPolicy::EVERYONE => TeamFolderPolicy::DEFAULT_QUOTA])
+			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, [])
 			->willReturn([]);
 
-		$this->assertSame([TeamFolderPolicy::EVERYONE => TeamFolderPolicy::DEFAULT_QUOTA], $this->service->getQuotas());
+		$this->assertSame([], $this->service->getQuotas());
 	}
 
-	public function testGetQuotasPreservesConfiguredEveryoneQuota(): void {
-		$this->configureQuotas([TeamFolderPolicy::EVERYONE => 2147483648, 'engineering' => 5368709120]);
+	public function testGetQuotasPreservesConfiguredOverrides(): void {
+		$this->configureQuotas(['engineering' => 5368709120]);
 
-		$this->assertSame([
-			TeamFolderPolicy::EVERYONE => 2147483648,
-			'engineering' => 5368709120,
-		], $this->service->getQuotas());
+		$this->assertSame(['engineering' => 5368709120], $this->service->getQuotas());
 	}
 
-	public function testGetQuotaForCircleUsesEveryoneWithoutMatchingTeam(): void {
-		$this->configureQuotas([TeamFolderPolicy::EVERYONE => 104857600, 'marketing' => 2147483648]);
+	public function testGetQuotaForCircleUsesDefaultWithoutMatchingTeam(): void {
+		$this->configureDefaultQuota(104857600);
+		$this->configureQuotas(['marketing' => 2147483648]);
 		$circle = $this->createCircleWithOwner('alice');
 		$this->configureMemberships('alice', ['support']);
 
@@ -119,8 +125,8 @@ class TeamFolderPolicyTest extends TestCase {
 	}
 
 	public function testGetQuotaForCircleUsesHighestMatchingQuota(): void {
+		$this->configureDefaultQuota(104857600);
 		$this->configureQuotas([
-			TeamFolderPolicy::EVERYONE => 104857600,
 			'marketing' => 2147483648,
 			'engineering' => 5368709120,
 		]);
@@ -131,58 +137,54 @@ class TeamFolderPolicyTest extends TestCase {
 	}
 
 	public function testGetQuotaForCircleTreatsUnlimitedAsHighestQuota(): void {
-		$this->configureQuotas([TeamFolderPolicy::EVERYONE => 104857600, 'marketing' => 2147483648, 'engineering' => 0]);
+		$this->configureDefaultQuota(104857600);
+		$this->configureQuotas(['marketing' => 2147483648, 'engineering' => 0]);
 		$circle = $this->createCircleWithOwner('bob');
 		$this->configureMemberships('bob', ['marketing', 'engineering']);
 
 		$this->assertSame(0, $this->service->getQuotaForCircle($circle));
 	}
 
-	public function testGetQuotaForCircleUsesEveryoneForRemoteOwner(): void {
-		$this->configureQuotas([TeamFolderPolicy::EVERYONE => 104857600]);
+	public function testGetQuotaForCircleUsesDefaultForRemoteOwner(): void {
+		$this->configureDefaultQuota(104857600);
 		$circle = $this->createCircleWithOwner('remote-user', false);
 		$this->membershipRequest->expects($this->never())->method('getMemberships');
 
 		$this->assertSame(104857600, $this->service->getQuotaForCircle($circle));
 	}
 
-	public function testSetQuotasRequiresEveryone(): void {
-		$this->appConfig->expects($this->never())->method('setAppValueArray');
-		$this->expectException(\InvalidArgumentException::class);
-		$this->expectExceptionMessage('everyone quota is required');
-
-		$this->service->setQuotas(['marketing' => 2147483648]);
-	}
-
 	public function testSetQuotasRejectsInvalidQuota(): void {
 		$this->appConfig->expects($this->never())->method('setAppValueArray');
 		$this->expectException(\InvalidArgumentException::class);
 
-		$this->service->setQuotas([TeamFolderPolicy::EVERYONE => -1]);
+		$this->service->setQuotas(['marketing' => -1]);
 	}
 
-	public function testSetQuotasStoresChangedEveryoneQuota(): void {
+	public function testSetQuotasStoresOverrides(): void {
 		$this->appConfig->expects($this->once())
 			->method('setAppValueArray')
-			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, [TeamFolderPolicy::EVERYONE => 2147483648]);
+			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, ['marketing' => 2147483648]);
 
-		$this->service->setQuotas([TeamFolderPolicy::EVERYONE => 2147483648]);
+		$this->service->setQuotas(['marketing' => 2147483648]);
 	}
 
-	public function testRemoveTeamKeepsEveryoneAndPersistsRemainingMappings(): void {
-		$quotas = [TeamFolderPolicy::EVERYONE => 104857600, 'marketing' => 2147483648, 'engineering' => 5368709120];
+	public function testRemoveTeamPersistsRemainingMappings(): void {
+		$quotas = ['marketing' => 2147483648, 'engineering' => 5368709120];
 		$this->configureQuotas($quotas);
 		$this->appConfig->expects($this->once())
 			->method('setAppValueArray')
-			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, [TeamFolderPolicy::EVERYONE => 104857600, 'engineering' => 5368709120]);
+			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, ['engineering' => 5368709120]);
 
 		$this->service->removeTeam('marketing');
-		$this->service->removeTeam(TeamFolderPolicy::EVERYONE);
 	}
 
 	/** @param array<string, int> $quotas */
 	private function configureQuotas(array $quotas): void {
 		$this->appConfig->method('getAppValueArray')->willReturn($quotas);
+	}
+
+	private function configureDefaultQuota(int $quota): void {
+		$this->appConfig->method('getAppValueInt')->willReturn($quota);
 	}
 
 	/** @param list<string> $teamIds */

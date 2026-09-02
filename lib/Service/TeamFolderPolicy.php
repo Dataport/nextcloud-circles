@@ -31,7 +31,6 @@ use OCP\AppFramework\Services\IAppConfig;
  * never persists a Groupfolders identifier.
  */
 class TeamFolderPolicy {
-	public const EVERYONE = 'everyone';
 	public const DEFAULT_QUOTA = 104857600;
 	public const PARAM_CREATE_TEAM_FOLDER = 'createTeamFolder';
 
@@ -85,14 +84,29 @@ class TeamFolderPolicy {
 	}
 
 	/**
+	 * Get the quota applied when no group-specific override matches.
+	 */
+	public function getDefaultQuota(): int {
+		$quota = $this->appConfig->getAppValueInt(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, self::DEFAULT_QUOTA);
+		return $quota >= 0 ? $quota : self::DEFAULT_QUOTA;
+	}
+
+	/**
+	 * @throws \InvalidArgumentException when the quota is negative.
+	 */
+	public function setDefaultQuota(int $quota): void {
+		if ($quota < 0) {
+			throw new \InvalidArgumentException('default quota must be a non-negative integer');
+		}
+
+		$this->appConfig->setAppValueInt(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, $quota);
+	}
+
+	/**
 	 * @return array<string, int>
 	 */
 	public function getQuotas(): array {
-		$quotas = $this->appConfig->getAppValueArray(ConfigLexicon::TEAM_FOLDER_QUOTAS, [self::EVERYONE => self::DEFAULT_QUOTA]);
-		if (!isset($quotas[self::EVERYONE]) || !is_int($quotas[self::EVERYONE]) || $quotas[self::EVERYONE] < 0) {
-			$quotas[self::EVERYONE] = self::DEFAULT_QUOTA;
-		}
-
+		$quotas = $this->appConfig->getAppValueArray(ConfigLexicon::TEAM_FOLDER_QUOTAS, []);
 		return array_filter(
 			$quotas,
 			static fn (mixed $quota, mixed $teamId): bool => is_string($teamId) && $teamId !== '' && is_int($quota) && $quota >= 0,
@@ -104,10 +118,6 @@ class TeamFolderPolicy {
 	 * @param array<string, mixed> $quotas
 	 */
 	public function setQuotas(array $quotas): void {
-		if (!array_key_exists(self::EVERYONE, $quotas)) {
-			throw new \InvalidArgumentException('everyone quota is required');
-		}
-
 		foreach ($quotas as $teamId => $quota) {
 			if (!is_string($teamId) || trim($teamId) === '' || !is_int($quota) || $quota < 0) {
 				throw new \InvalidArgumentException('quotas must map non-empty team IDs to non-negative integers');
@@ -118,10 +128,6 @@ class TeamFolderPolicy {
 	}
 
 	public function removeTeam(string $teamId): void {
-		if ($teamId === self::EVERYONE) {
-			return;
-		}
-
 		$quotas = $this->getQuotas();
 		if (array_key_exists($teamId, $quotas)) {
 			unset($quotas[$teamId]);
@@ -135,7 +141,7 @@ class TeamFolderPolicy {
 	 */
 	public function getQuotaForCircle(Circle $circle): int {
 		$quotas = $this->getQuotas();
-		$fallback = $quotas[self::EVERYONE];
+		$fallback = $this->getDefaultQuota();
 		$owner = $circle->getOwner();
 		if (!$owner->isLocal()) {
 			return $fallback;

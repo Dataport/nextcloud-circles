@@ -56,6 +56,20 @@ class SettingsController extends OCSController {
 			return $this->getValues();
 		}
 
+		if ($key === ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA) {
+			if (!preg_match('/^\d+$/', $value)) {
+				return new DataResponse(['data' => ['message' => 'default quota must be a non-negative integer']], Http::STATUS_BAD_REQUEST);
+			}
+
+			try {
+				$this->teamFolderPolicy->setDefaultQuota((int)$value);
+			} catch (\InvalidArgumentException $e) {
+				return new DataResponse(['data' => ['message' => $e->getMessage()]], Http::STATUS_BAD_REQUEST);
+			}
+
+			return $this->getValues();
+		}
+
 		return new DataResponse(['data' => ['message' => 'unsupported key']], Http::STATUS_BAD_REQUEST);
 	}
 
@@ -63,6 +77,7 @@ class SettingsController extends OCSController {
 		return new DataResponse([
 			ConfigLexicon::FEDERATED_TEAMS_FRONTAL => $this->getFrontalValue() ?? '',
 			ConfigLexicon::FEDERATED_TEAMS_ENABLED => $this->appConfig->getAppValueBool(ConfigLexicon::FEDERATED_TEAMS_ENABLED),
+			ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA => $this->teamFolderPolicy->getDefaultQuota(),
 			ConfigLexicon::TEAM_FOLDER_QUOTAS => $this->teamFolderPolicy->getQuotas(),
 		]);
 	}

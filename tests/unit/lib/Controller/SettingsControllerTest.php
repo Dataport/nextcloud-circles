@@ -25,7 +25,7 @@ class SettingsControllerTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->storedQuotas = [TeamFolderPolicy::EVERYONE => TeamFolderPolicy::DEFAULT_QUOTA];
+		$this->storedQuotas = [];
 		$this->teamFolderPolicy = $this->createMock(TeamFolderPolicy::class);
 		$this->teamFolderPolicy->method('getQuotas')->willReturnCallback(fn (): array => $this->storedQuotas);
 		$this->controller = new SettingsController(
@@ -37,7 +37,7 @@ class SettingsControllerTest extends TestCase {
 	}
 
 	public function testSetValueStoresQuotaMapping(): void {
-		$quotas = [TeamFolderPolicy::EVERYONE => 104857600, 'engineering' => 5368709120];
+		$quotas = ['engineering' => 5368709120];
 		$this->storedQuotas = $quotas;
 		$this->teamFolderPolicy->expects($this->once())->method('setQuotas')->with($quotas);
 
@@ -55,24 +55,29 @@ class SettingsControllerTest extends TestCase {
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 	}
 
-	public function testSetValueRejectsMissingEveryone(): void {
-		$this->teamFolderPolicy->method('setQuotas')->willThrowException(new \InvalidArgumentException('everyone quota is required'));
+	public function testSetValueStoresDefaultQuota(): void {
+		$this->teamFolderPolicy->expects($this->once())->method('setDefaultQuota')->with(2147483648);
 
-		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_QUOTAS, '{"marketing":2147483648}');
-
-		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
-		$this->assertSame('everyone quota is required', $response->getData()['data']['message']);
-	}
-
-	public function testSetValueStoresChangedEveryoneQuota(): void {
-		$quotas = [TeamFolderPolicy::EVERYONE => 2147483648];
-		$this->storedQuotas = $quotas;
-		$this->teamFolderPolicy->expects($this->once())->method('setQuotas')->with($quotas);
-
-		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_QUOTAS, '{"everyone":2147483648}');
+		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, '2147483648');
 
 		$this->assertSame(Http::STATUS_OK, $response->getStatus());
-		$this->assertSame($quotas, $response->getData()[ConfigLexicon::TEAM_FOLDER_QUOTAS]);
+	}
+
+	public function testSetValueRejectsInvalidDefaultQuota(): void {
+		$this->teamFolderPolicy->method('setDefaultQuota')
+			->willThrowException(new \InvalidArgumentException('default quota must be a non-negative integer'));
+
+		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, '-1');
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
+	}
+
+	public function testSetValueRejectsNonNumericDefaultQuota(): void {
+		$this->teamFolderPolicy->expects($this->never())->method('setDefaultQuota');
+
+		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, 'unlimited');
+
+		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 	}
 
 	public function testSetValueRejectsUnsupportedKey(): void {

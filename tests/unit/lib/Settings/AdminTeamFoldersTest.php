@@ -28,11 +28,13 @@ class AdminTeamFoldersTest extends TestCase {
 	}
 
 	public function testGetFormProvidesAutoCreateState(): void {
-		$quotas = [TeamFolderPolicy::EVERYONE => TeamFolderPolicy::DEFAULT_QUOTA];
+		$defaultQuota = TeamFolderPolicy::DEFAULT_QUOTA;
+		$quotas = ['engineering' => 5368709120];
 		$providedState = [];
+		$this->teamFolderPolicy->expects($this->once())->method('getDefaultQuota')->willReturn($defaultQuota);
 		$this->teamFolderPolicy->expects($this->once())->method('getQuotas')->willReturn($quotas);
 		$this->teamFolderPolicy->expects($this->once())->method('isTeamFolderProvisioningEnabled')->willReturn(false);
-		$this->initialState->expects($this->exactly(2))
+		$this->initialState->expects($this->exactly(3))
 			->method('provideInitialState')
 			->willReturnCallback(function (string $key, mixed $value) use (&$providedState): void {
 				$providedState[$key] = $value;
@@ -47,6 +49,7 @@ class AdminTeamFoldersTest extends TestCase {
 		$settings->getForm();
 
 		$this->assertSame([
+			'teamFolderDefaultQuota' => $defaultQuota,
 			'teamFolderQuotas' => $quotas,
 			'teamFolderAutoCreateEnabled' => false,
 		], $providedState);

@@ -54,7 +54,7 @@ class TeamFolderLifecycleListener implements IEventListener {
 
 		$circle = $event->getCircle();
 		$params = $event->getFederatedEvent()->getParams();
-		if ($params->has(TeamFolderPolicy::PARAM_CREATE_TEAM_FOLDER)
+		if ($params->hasKey(TeamFolderPolicy::PARAM_CREATE_TEAM_FOLDER)
 			&& !$params->gBool(TeamFolderPolicy::PARAM_CREATE_TEAM_FOLDER)) {
 			return;
 		}
