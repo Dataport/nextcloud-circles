@@ -33,6 +33,7 @@ use OCP\AppFramework\Services\IAppConfig;
 class TeamFolderPolicy {
 	public const EVERYONE = 'everyone';
 	public const DEFAULT_QUOTA = 104857600;
+	public const PARAM_CREATE_TEAM_FOLDER = 'createTeamFolder';
 
 	public function __construct(
 		private IAppConfig $appConfig,

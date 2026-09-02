@@ -17,10 +17,60 @@ use OCP\Teams\ITeamFolderProvider;
 use OCP\Teams\ITeamManager;
 use OCP\Teams\Team;
 use OCP\Teams\TeamFolder;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
 class TeamFolderLifecycleListenerTest extends TestCase {
+	private TeamFolderLifecycleListener $listener;
+	private ITeamManager&MockObject $teamManager;
+	private TeamFolderPolicy&MockObject $policy;
+	private ITeamFolderProvider&MockObject $provider;
+
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->teamManager = $this->createMock(ITeamManager::class);
+		$this->policy = $this->createMock(TeamFolderPolicy::class);
+		$this->provider = $this->createMock(ITeamFolderProvider::class);
+		$this->listener = new TeamFolderLifecycleListener(
+			$this->teamManager,
+			$this->policy,
+			$this->createMock(LoggerInterface::class),
+		);
+	}
+
+	public function testSkipsCreateWhenWizardDidNotRequestTeamFolder(): void {
+		$this->policy->expects($this->never())->method('shouldCreateTeamFolder');
+		$this->teamManager->expects($this->never())->method('getTeamFolderProvider');
+
+		$this->listener->handle($this->creatingEvent(false));
+	}
+
+	public function testCreatesTeamFolderWhenRequested(): void {
+		$circle = $this->createMock(Circle::class);
+		$circle->method('getSingleId')->willReturn('team1');
+		$circle->method('getDisplayName')->willReturn('Design');
+		$this->policy->expects($this->once())->method('shouldCreateTeamFolder')->with($circle)->willReturn(true);
+		$this->policy->expects($this->once())->method('getQuotaForCircle')->with($circle)->willReturn(0);
+		$this->teamManager->method('getTeamFolderProvider')->willReturn($this->provider);
+		$this->provider->expects($this->once())->method('createTeamFolder');
+
+		$this->listener->handle($this->creatingEvent(true, $circle));
+	}
+
+	public function testDefaultsToCreateWhenParamIsMissing(): void {
+		$circle = $this->createMock(Circle::class);
+		$circle->method('getSingleId')->willReturn('team1');
+		$circle->method('getDisplayName')->willReturn('Design');
+		$this->policy->expects($this->once())->method('shouldCreateTeamFolder')->with($circle)->willReturn(true);
+		$this->policy->expects($this->once())->method('getQuotaForCircle')->with($circle)->willReturn(0);
+		$this->teamManager->method('getTeamFolderProvider')->willReturn($this->provider);
+		$this->provider->expects($this->once())->method('createTeamFolder');
+
+		$this->listener->handle($this->creatingEvent(null, $circle));
+	}
+
 	public function testCreatingCircleUsesResolvedOwnerQuota(): void {
 		$circle = $this->createMock(Circle::class);
 		$circle->method('getSingleId')->willReturn('team-1');
@@ -61,5 +111,21 @@ class TeamFolderLifecycleListenerTest extends TestCase {
 
 		$listener = new TeamFolderLifecycleListener($teamManager, $policy, $this->createMock(LoggerInterface::class));
 		$listener->handle(new DestroyingCircleEvent($federatedEvent));
+	}
+
+	private function creatingEvent(?bool $createTeamFolder, ?Circle $circle = null): CreatingCircleEvent {
+		if ($circle === null) {
+			$circle = $this->createMock(Circle::class);
+			$circle->method('getSingleId')->willReturn('team1');
+			$circle->method('getDisplayName')->willReturn('Design');
+		}
+
+		$federatedEvent = new FederatedEvent();
+		$federatedEvent->setCircle($circle);
+		if ($createTeamFolder !== null) {
+			$federatedEvent->getParams()->sBool(TeamFolderPolicy::PARAM_CREATE_TEAM_FOLDER, $createTeamFolder);
+		}
+
+		return new CreatingCircleEvent($federatedEvent);
 	}
 }

@@ -187,10 +187,10 @@ export async function fetchTeamMembers(teamId: string): Promise<Member[]> {
  *
  * @param name - The team name
  */
-export async function createTeam(name: string): Promise<string> {
+export async function createTeam(name: string, createTeamFolder = true): Promise<string> {
 	const res = await axios.post<OcsResponse<RawCircle>>(
 		generateOcsUrl('apps/circles/circles'),
-		{ name },
+		{ name, createTeamFolder },
 	)
 	return res.data.ocs.data.id
 }
