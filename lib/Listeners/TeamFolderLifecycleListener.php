@@ -53,9 +53,7 @@ class TeamFolderLifecycleListener implements IEventListener {
 		}
 
 		$circle = $event->getCircle();
-		$params = $event->getFederatedEvent()->getParams();
-		if ($params->hasKey(TeamFolderPolicy::PARAM_CREATE_TEAM_FOLDER)
-			&& !$params->gBool(TeamFolderPolicy::PARAM_CREATE_TEAM_FOLDER)) {
+		if (!$this->wasTeamFolderRequested($event)) {
 			return;
 		}
 
@@ -83,5 +81,14 @@ class TeamFolderLifecycleListener implements IEventListener {
 				'exception' => $e,
 			]);
 		}
+	}
+
+	private function wasTeamFolderRequested(CreatingCircleEvent $event): bool {
+		$params = $event->getFederatedEvent()->getParams();
+		if (!$params->hasKey(TeamFolderPolicy::PARAM_CREATE_TEAM_FOLDER)) {
+			return true;
+		}
+
+		return $params->gBool(TeamFolderPolicy::PARAM_CREATE_TEAM_FOLDER);
 	}
 }
