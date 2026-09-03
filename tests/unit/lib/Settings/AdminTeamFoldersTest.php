@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace OCA\Circles\Tests\Unit\Settings;
 
+use OCA\Circles\ConfigLexicon;
 use OCA\Circles\Service\TeamFolderPolicy;
 use OCA\Circles\Settings\AdminTeamFolders;
 use OCP\AppFramework\Services\IInitialState;
@@ -28,7 +29,7 @@ class AdminTeamFoldersTest extends TestCase {
 	}
 
 	public function testGetFormProvidesAutoCreateState(): void {
-		$defaultQuota = TeamFolderPolicy::DEFAULT_QUOTA;
+		$defaultQuota = ConfigLexicon::DEFAULT_QUOTA;
 		$providedState = [];
 		$this->teamFolderPolicy->expects($this->once())->method('getDefaultQuota')->willReturn($defaultQuota);
 		$this->teamFolderPolicy->expects($this->once())->method('isTeamFolderProvisioningEnabled')->willReturn(false);

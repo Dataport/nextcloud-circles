@@ -99,7 +99,7 @@ class TeamFolderPolicyTest extends TestCase {
 
 	public function testGetDefaultQuotaUsesConfiguredValue(): void {
 		$this->appConfig->method('getAppValueInt')
-			->with(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, TeamFolderPolicy::DEFAULT_QUOTA)
+			->with(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, ConfigLexicon::DEFAULT_QUOTA)
 			->willReturn(2147483648);
 
 		$this->assertSame(2147483648, $this->service->getDefaultQuota());
@@ -143,16 +143,16 @@ class TeamFolderPolicyTest extends TestCase {
 	}
 
 	public function testGetQuotaForCircleUsesDefaultWithoutMatchingTeam(): void {
-		$this->configureDefaultQuota(104857600);
+		$this->configureDefaultQuota(ConfigLexicon::DEFAULT_QUOTA);
 		$circle = $this->createCircleWithOwner('alice');
 		$this->configureMemberships('alice', ['support']);
 		$this->configureMembershipCircles(['support' => null]);
 
-		$this->assertSame(104857600, $this->service->getQuotaForCircle($circle));
+		$this->assertSame(ConfigLexicon::DEFAULT_QUOTA, $this->service->getQuotaForCircle($circle));
 	}
 
 	public function testGetQuotaForCircleUsesHighestMatchingQuota(): void {
-		$this->configureDefaultQuota(104857600);
+		$this->configureDefaultQuota(ConfigLexicon::DEFAULT_QUOTA);
 		$this->configureMembershipCircles([
 			'marketing' => 2147483648,
 			'engineering' => 5368709120,
@@ -164,7 +164,7 @@ class TeamFolderPolicyTest extends TestCase {
 	}
 
 	public function testGetQuotaForCircleTreatsUnlimitedAsHighestQuota(): void {
-		$this->configureDefaultQuota(104857600);
+		$this->configureDefaultQuota(ConfigLexicon::DEFAULT_QUOTA);
 		$this->configureMembershipCircles(['marketing' => 2147483648, 'engineering' => 0]);
 		$circle = $this->createCircleWithOwner('bob');
 		$this->configureMemberships('bob', ['marketing', 'engineering']);
@@ -173,11 +173,11 @@ class TeamFolderPolicyTest extends TestCase {
 	}
 
 	public function testGetQuotaForCircleUsesDefaultForRemoteOwner(): void {
-		$this->configureDefaultQuota(104857600);
+		$this->configureDefaultQuota(ConfigLexicon::DEFAULT_QUOTA);
 		$circle = $this->createCircleWithOwner('remote-user', false);
 		$this->membershipRequest->expects($this->never())->method('getMemberships');
 
-		$this->assertSame(104857600, $this->service->getQuotaForCircle($circle));
+		$this->assertSame(ConfigLexicon::DEFAULT_QUOTA, $this->service->getQuotaForCircle($circle));
 	}
 
 	public function testSetTeamFolderQuotaRejectsInvalidQuota(): void {

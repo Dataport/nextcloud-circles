@@ -32,7 +32,6 @@ use OCP\AppFramework\Services\IAppConfig;
  * never persists a Groupfolders identifier.
  */
 class TeamFolderPolicy {
-	public const DEFAULT_QUOTA = 104857600;
 	public const PARAM_CREATE_TEAM_FOLDER = 'createTeamFolder';
 
 	public function __construct(
@@ -89,8 +88,8 @@ class TeamFolderPolicy {
 	 * Get the quota applied when no group-specific override matches.
 	 */
 	public function getDefaultQuota(): int {
-		$quota = $this->appConfig->getAppValueInt(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, self::DEFAULT_QUOTA);
-		return $quota >= 0 ? $quota : self::DEFAULT_QUOTA;
+		$quota = $this->appConfig->getAppValueInt(ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA, ConfigLexicon::DEFAULT_QUOTA);
+		return $quota >= 0 ? $quota : ConfigLexicon::DEFAULT_QUOTA;
 	}
 
 	/**
