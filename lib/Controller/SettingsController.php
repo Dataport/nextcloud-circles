@@ -42,20 +42,6 @@ class SettingsController extends OCSController {
 			return $this->getValues();
 		}
 
-		if ($key === ConfigLexicon::TEAM_FOLDER_QUOTAS) {
-			try {
-				$quotas = json_decode($value, true, flags: JSON_THROW_ON_ERROR);
-				if (!is_array($quotas) || array_is_list($quotas)) {
-					throw new \InvalidArgumentException('quotas must be an object');
-				}
-				$this->teamFolderPolicy->setQuotas($quotas);
-			} catch (\JsonException|\InvalidArgumentException $e) {
-				return new DataResponse(['data' => ['message' => $e->getMessage()]], Http::STATUS_BAD_REQUEST);
-			}
-
-			return $this->getValues();
-		}
-
 		if ($key === ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA) {
 			if (!preg_match('/^\d+$/', $value)) {
 				return new DataResponse(['data' => ['message' => 'default quota must be a non-negative integer']], Http::STATUS_BAD_REQUEST);
@@ -78,7 +64,6 @@ class SettingsController extends OCSController {
 			ConfigLexicon::FEDERATED_TEAMS_FRONTAL => $this->getFrontalValue() ?? '',
 			ConfigLexicon::FEDERATED_TEAMS_ENABLED => $this->appConfig->getAppValueBool(ConfigLexicon::FEDERATED_TEAMS_ENABLED),
 			ConfigLexicon::TEAM_FOLDER_DEFAULT_QUOTA => $this->teamFolderPolicy->getDefaultQuota(),
-			ConfigLexicon::TEAM_FOLDER_QUOTAS => $this->teamFolderPolicy->getQuotas(),
 		]);
 	}
 
@@ -98,7 +83,7 @@ class SettingsController extends OCSController {
 
 	private function getFrontalValue(): ?string {
 		if ($this->appConfig->hasAppKey(ConfigLexicon::FEDERATED_TEAMS_FRONTAL)) {
-			return $this->appConfig->getAppValueString(ConfigLExicon::FEDERATED_TEAMS_FRONTAL);
+			return $this->appConfig->getAppValueString(ConfigLexicon::FEDERATED_TEAMS_FRONTAL);
 		}
 
 		if (!$this->appConfig->hasAppKey(ConfigService::FRONTAL_CLOUD_SCHEME)

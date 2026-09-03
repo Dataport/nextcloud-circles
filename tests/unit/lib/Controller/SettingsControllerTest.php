@@ -19,40 +19,17 @@ use PHPUnit\Framework\TestCase;
 class SettingsControllerTest extends TestCase {
 	private SettingsController $controller;
 	private TeamFolderPolicy&MockObject $teamFolderPolicy;
-	/** @var array<string, int> */
-	private array $storedQuotas;
 
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->storedQuotas = [];
 		$this->teamFolderPolicy = $this->createMock(TeamFolderPolicy::class);
-		$this->teamFolderPolicy->method('getQuotas')->willReturnCallback(fn (): array => $this->storedQuotas);
 		$this->controller = new SettingsController(
 			'circles',
 			$this->createMock(IRequest::class),
 			$this->createMock(IAppConfig::class),
 			$this->teamFolderPolicy,
 		);
-	}
-
-	public function testSetValueStoresQuotaMapping(): void {
-		$quotas = ['engineering' => 5368709120];
-		$this->storedQuotas = $quotas;
-		$this->teamFolderPolicy->expects($this->once())->method('setQuotas')->with($quotas);
-
-		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_QUOTAS, json_encode($quotas, JSON_THROW_ON_ERROR));
-
-		$this->assertSame(Http::STATUS_OK, $response->getStatus());
-		$this->assertSame($quotas, $response->getData()[ConfigLexicon::TEAM_FOLDER_QUOTAS]);
-	}
-
-	public function testSetValueRejectsMalformedJson(): void {
-		$this->teamFolderPolicy->expects($this->never())->method('setQuotas');
-
-		$response = $this->controller->setValue(ConfigLexicon::TEAM_FOLDER_QUOTAS, '{invalid');
-
-		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());
 	}
 
 	public function testSetValueStoresDefaultQuota(): void {
@@ -81,8 +58,6 @@ class SettingsControllerTest extends TestCase {
 	}
 
 	public function testSetValueRejectsUnsupportedKey(): void {
-		$this->teamFolderPolicy->expects($this->never())->method('setQuotas');
-
 		$response = $this->controller->setValue('unsupported', '{}');
 
 		$this->assertSame(Http::STATUS_BAD_REQUEST, $response->getStatus());

@@ -8,6 +8,7 @@
 namespace OCA\Circles\Tests\Unit\Service;
 
 use OCA\Circles\ConfigLexicon;
+use OCA\Circles\Db\CircleRequest;
 use OCA\Circles\Db\MembershipRequest;
 use OCA\Circles\Model\Circle;
 use OCA\Circles\Model\Member;
@@ -21,6 +22,7 @@ class TeamFolderPolicyTest extends TestCase {
 	private TeamFolderPolicy $service;
 	private IAppConfig&MockObject $appConfig;
 	private MembershipRequest&MockObject $membershipRequest;
+	private CircleRequest&MockObject $circleRequest;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -30,10 +32,12 @@ class TeamFolderPolicyTest extends TestCase {
 			->with(ConfigLexicon::TEAM_FOLDER_AUTO_CREATE, true)
 			->willReturn(true);
 		$this->membershipRequest = $this->createMock(MembershipRequest::class);
+		$this->circleRequest = $this->createMock(CircleRequest::class);
 
 		$this->service = new TeamFolderPolicy(
 			$this->appConfig,
 			$this->membershipRequest,
+			$this->circleRequest,
 		);
 	}
 
@@ -66,7 +70,7 @@ class TeamFolderPolicyTest extends TestCase {
 		$appConfig->method('getAppValueBool')
 			->with(ConfigLexicon::TEAM_FOLDER_AUTO_CREATE, true)
 			->willReturn(false);
-		$service = new TeamFolderPolicy($appConfig, $this->membershipRequest);
+		$service = new TeamFolderPolicy($appConfig, $this->membershipRequest, $this->circleRequest);
 
 		$this->assertFalse($service->isTeamFolderProvisioningEnabled());
 		$this->assertFalse($service->shouldCreateTeamFolder($this->createCircle()));
@@ -87,7 +91,7 @@ class TeamFolderPolicyTest extends TestCase {
 		$appConfig->method('getAppValueBool')
 			->with(ConfigLexicon::TEAM_FOLDER_AUTO_CREATE, true)
 			->willReturn(false);
-		$service = new TeamFolderPolicy($appConfig, $this->membershipRequest);
+		$service = new TeamFolderPolicy($appConfig, $this->membershipRequest, $this->circleRequest);
 
 		$this->assertTrue($service->isEligibleCircle($this->createCircle()));
 		$this->assertFalse($service->isEligibleCircle($this->createCircle(Circle::CFG_PERSONAL)));
@@ -101,32 +105,55 @@ class TeamFolderPolicyTest extends TestCase {
 		$this->assertSame(2147483648, $this->service->getDefaultQuota());
 	}
 
-	public function testGetQuotasDefaultsToEmptyArray(): void {
-		$this->appConfig->method('getAppValueArray')
-			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, [])
-			->willReturn([]);
+	public function testGetTeamFolderQuotaReadsValidSetting(): void {
+		$circle = (new Circle())->setSettings([Circle::SETTING_TEAM_FOLDER_QUOTA => 5368709120]);
 
-		$this->assertSame([], $this->service->getQuotas());
+		$this->assertSame(5368709120, $this->service->getTeamFolderQuota($circle));
 	}
 
-	public function testGetQuotasPreservesConfiguredOverrides(): void {
-		$this->configureQuotas(['engineering' => 5368709120]);
+	public function testGetTeamFolderQuotaIgnoresMissingOrInvalidSetting(): void {
+		$this->assertNull($this->service->getTeamFolderQuota((new Circle())->setSettings([])));
+		$this->assertNull($this->service->getTeamFolderQuota(
+			(new Circle())->setSettings([Circle::SETTING_TEAM_FOLDER_QUOTA => -1]),
+		));
+	}
 
-		$this->assertSame(['engineering' => 5368709120], $this->service->getQuotas());
+	public function testSetTeamFolderQuotaPreservesOtherSettings(): void {
+		$circle = (new Circle())->setSettings(['population' => 10]);
+		$this->circleRequest->expects($this->once())
+			->method('updateSettings')
+			->with($this->callback(static fn (Circle $updated): bool => $updated->getSettings() === [
+				'population' => 10,
+				Circle::SETTING_TEAM_FOLDER_QUOTA => 2147483648,
+			]));
+
+		$this->service->setTeamFolderQuota($circle, 2147483648);
+	}
+
+	public function testRemoveTeamFolderQuotaPreservesOtherSettings(): void {
+		$circle = (new Circle())->setSettings([
+			'population' => 10,
+			Circle::SETTING_TEAM_FOLDER_QUOTA => 2147483648,
+		]);
+		$this->circleRequest->expects($this->once())
+			->method('updateSettings')
+			->with($this->callback(static fn (Circle $updated): bool => $updated->getSettings() === ['population' => 10]));
+
+		$this->service->removeTeamFolderQuota($circle);
 	}
 
 	public function testGetQuotaForCircleUsesDefaultWithoutMatchingTeam(): void {
 		$this->configureDefaultQuota(104857600);
-		$this->configureQuotas(['marketing' => 2147483648]);
 		$circle = $this->createCircleWithOwner('alice');
 		$this->configureMemberships('alice', ['support']);
+		$this->configureMembershipCircles(['support' => null]);
 
 		$this->assertSame(104857600, $this->service->getQuotaForCircle($circle));
 	}
 
 	public function testGetQuotaForCircleUsesHighestMatchingQuota(): void {
 		$this->configureDefaultQuota(104857600);
-		$this->configureQuotas([
+		$this->configureMembershipCircles([
 			'marketing' => 2147483648,
 			'engineering' => 5368709120,
 		]);
@@ -138,7 +165,7 @@ class TeamFolderPolicyTest extends TestCase {
 
 	public function testGetQuotaForCircleTreatsUnlimitedAsHighestQuota(): void {
 		$this->configureDefaultQuota(104857600);
-		$this->configureQuotas(['marketing' => 2147483648, 'engineering' => 0]);
+		$this->configureMembershipCircles(['marketing' => 2147483648, 'engineering' => 0]);
 		$circle = $this->createCircleWithOwner('bob');
 		$this->configureMemberships('bob', ['marketing', 'engineering']);
 
@@ -153,34 +180,23 @@ class TeamFolderPolicyTest extends TestCase {
 		$this->assertSame(104857600, $this->service->getQuotaForCircle($circle));
 	}
 
-	public function testSetQuotasRejectsInvalidQuota(): void {
-		$this->appConfig->expects($this->never())->method('setAppValueArray');
+	public function testSetTeamFolderQuotaRejectsInvalidQuota(): void {
+		$this->circleRequest->expects($this->never())->method('updateSettings');
 		$this->expectException(\InvalidArgumentException::class);
 
-		$this->service->setQuotas(['marketing' => -1]);
+		$this->service->setTeamFolderQuota(new Circle(), -1);
 	}
 
-	public function testSetQuotasStoresOverrides(): void {
-		$this->appConfig->expects($this->once())
-			->method('setAppValueArray')
-			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, ['marketing' => 2147483648]);
+	/** @param array<string, int|null> $quotas */
+	private function configureMembershipCircles(array $quotas): void {
+		$circles = [];
+		foreach ($quotas as $teamId => $quota) {
+			$settings = $quota === null ? [] : [Circle::SETTING_TEAM_FOLDER_QUOTA => $quota];
+			$circles[$teamId] = (new Circle())->setSingleId($teamId)->setSettings($settings);
+		}
 
-		$this->service->setQuotas(['marketing' => 2147483648]);
-	}
-
-	public function testRemoveTeamPersistsRemainingMappings(): void {
-		$quotas = ['marketing' => 2147483648, 'engineering' => 5368709120];
-		$this->configureQuotas($quotas);
-		$this->appConfig->expects($this->once())
-			->method('setAppValueArray')
-			->with(ConfigLexicon::TEAM_FOLDER_QUOTAS, ['engineering' => 5368709120]);
-
-		$this->service->removeTeam('marketing');
-	}
-
-	/** @param array<string, int> $quotas */
-	private function configureQuotas(array $quotas): void {
-		$this->appConfig->method('getAppValueArray')->willReturn($quotas);
+		$this->circleRequest->method('getCircle')
+			->willReturnCallback(static fn (string $teamId): Circle => $circles[$teamId]);
 	}
 
 	private function configureDefaultQuota(int $quota): void {

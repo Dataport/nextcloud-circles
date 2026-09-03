@@ -24,7 +24,7 @@ import NcSelect from '@nextcloud/vue/components/NcSelect'
 import NcTextField from '@nextcloud/vue/components/NcTextField'
 import IconDeleteOutline from 'vue-material-design-icons/TrashCanOutline.vue'
 import { logger } from '../logger.ts'
-import { deleteTeam, getAdminTeamFolders, getLinkableTeamFolders, linkTeamFolder, updateTeamFolderQuota, upgradeTeamFolder } from '../teams/api.ts'
+import { deleteTeam, getAdminTeamFolders, getLinkableTeamFolders, linkTeamFolder, updateTeamFolderDefaultQuota, updateTeamFolderQuota, upgradeTeamFolder } from '../teams/api.ts'
 
 interface QuotaOption {
 	id: string
@@ -52,12 +52,10 @@ const quotaPreset: QuotaOption[] = [
 ]
 
 const initialDefaultQuota = loadState<number>('circles', 'teamFolderDefaultQuota', 104857600)
-const initialQuotas = loadState<Record<string, number>>('circles', 'teamFolderQuotas', {})
 const teamFolderAutoCreateEnabled = loadState<boolean>('circles', 'teamFolderAutoCreateEnabled', true)
 const defaultQuota = ref<QuotaOption>(quotaOption(initialDefaultQuota))
-const rows = ref<QuotaRow[]>(Object.entries(initialQuotas)
-	.map(([teamId, quota]) => ({ id: teamId, label: teamId, quota: quotaOption(quota) }))
-	.sort((left, right) => left.label.localeCompare(right.label)))
+const rows = ref<QuotaRow[]>([])
+const loadedQuotas = ref<Record<string, number>>({})
 const teams = ref<TeamOption[]>([])
 const selectedQuotaTeam = ref<TeamOption | null>(null)
 const loadingTeams = ref(false)
@@ -174,8 +172,13 @@ async function loadTeamFolders() {
 		teams.value = teamFolders.value
 			.map((team) => ({ id: team.teamId, label: team.teamName }))
 			.sort((left, right) => left.label.localeCompare(right.label))
-		const labels = new Map(teams.value.map((team) => [team.id, team.label]))
-		rows.value = rows.value.map((row) => ({ ...row, label: labels.get(row.id) ?? row.label }))
+		loadedQuotas.value = Object.fromEntries(teamFolders.value
+			.filter((team) => team.defaultQuota !== null)
+			.map((team) => [team.teamId, team.defaultQuota as number]))
+		rows.value = teamFolders.value
+			.filter((team) => team.defaultQuota !== null)
+			.map((team) => ({ id: team.teamId, label: team.teamName, quota: quotaOption(team.defaultQuota as number) }))
+			.sort((left, right) => left.label.localeCompare(right.label))
 		teamFolderQuotas.value = Object.fromEntries(teamFolders.value.map((teamFolder) => [
 			teamFolder.teamId,
 			quotaOptionFromBytes(teamFolder.folder?.quota ?? 104857600),
@@ -408,8 +411,32 @@ async function onSaveQuotas() {
 
 	saving.value = true
 	const defaultSaved = await updateAppConfig('team_folder_default_quota', String(Math.round(defaultBytes)))
-	if (defaultSaved && await updateAppConfig('team_folder_quotas', JSON.stringify(quotas))) {
+	if (!defaultSaved) {
+		saving.value = false
+		return
+	}
+
+	let quotasSaved = true
+	const changedTeamIds = new Set([...Object.keys(loadedQuotas.value), ...Object.keys(quotas)])
+	for (const teamId of changedTeamIds) {
+		const quota = quotas[teamId] ?? null
+		if ((loadedQuotas.value[teamId] ?? null) === quota) {
+			continue
+		}
+
+		try {
+			await updateTeamFolderDefaultQuota(teamId, quota)
+		} catch (error) {
+			quotasSaved = false
+			logger.error('Unable to update default team folder quota', { error, teamId })
+		}
+	}
+
+	if (quotasSaved) {
 		showSuccess(t('circles', 'Changed default team folder quotas'))
+		await loadTeamFolders()
+	} else {
+		showError(t('circles', 'Unable to update team folder config'))
 	}
 	saving.value = false
 }
@@ -504,7 +531,7 @@ onMounted(() => {
 					:aria-label="t('circles', 'Default quota for all groups')"
 					:clearable="false"
 					:createOption="validateQuota"
-					:input-label="t('circles', 'Default quota')"
+					:inputLabel="t('circles', 'Default quota')"
 					:options="quotaOptions"
 					:placeholder="t('circles', 'Select default quota')"
 					taggable />

@@ -33,7 +33,6 @@ class TeamFolderLifecycleListener implements IEventListener {
 	public function handle(Event $event): void {
 		if ($event instanceof DestroyingCircleEvent) {
 			$circle = $event->getCircle();
-			$this->policy->removeTeam($circle->getSingleId());
 
 			$provider = $this->teamManager->getTeamFolderProvider();
 			if ($provider === null) {

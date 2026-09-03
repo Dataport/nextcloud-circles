@@ -99,13 +99,12 @@ class TeamFolderLifecycleListenerTest extends TestCase {
 		$listener->handle($event);
 	}
 
-	public function testDestroyingCircleRemovesQuotaMapping(): void {
+	public function testDestroyingCircleWithoutProviderNeedsNoQuotaCleanup(): void {
 		$circle = $this->createMock(Circle::class);
 		$circle->method('getSingleId')->willReturn('team-1');
 		$federatedEvent = $this->createMock(FederatedEvent::class);
 		$federatedEvent->method('getCircle')->willReturn($circle);
 		$policy = $this->createMock(TeamFolderPolicy::class);
-		$policy->expects($this->once())->method('removeTeam')->with('team-1');
 		$teamManager = $this->createMock(ITeamManager::class);
 		$teamManager->method('getTeamFolderProvider')->willReturn(null);
 
