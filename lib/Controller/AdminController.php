@@ -269,46 +269,6 @@ class AdminController extends OCSController {
 		}
 	}
 
-	/**
-	 * Return teams and their optionally linked team folders.
-	 *
-	 * @return DataResponse
-	 * @throws OCSException
-	 */
-	public function teamFolders(): DataResponse {
-		try {
-			$this->setLocalFederatedUser($this->userSession->getUser()->getUID());
-			$provider = $this->teamManager->getTeamFolderProvider();
-			if ($provider === null) {
-				return new DataResponse([]);
-			}
-
-			$probe = new CircleProbe();
-			$probe->filterPersonalCircles()
-				->filterSingleCircles()
-				->filterSystemCircles()
-				->filterHiddenCircles()
-				->filterBackendCircles();
-
-			$teamFolders = [];
-			foreach ($this->circleService->getAllCircles($probe) as $circle) {
-				$folder = $provider->getTeamFolder($circle->getSingleId());
-
-				$teamFolders[] = [
-					'teamId' => $circle->getSingleId(),
-					'teamName' => $circle->getDisplayName(),
-					'defaultQuota' => $this->teamFolderPolicy->getTeamFolderQuota($circle),
-					'folder' => $folder?->jsonSerialize(),
-				];
-			}
-
-			return new DataResponse($teamFolders);
-		} catch (Exception $e) {
-			$this->e($e);
-			throw new OCSException($e->getMessage(), (int)$e->getCode());
-		}
-	}
-
 	public function updateTeamFolderDefaultQuota(string $circleId, ?int $quota): DataResponse {
 		try {
 			$user = $this->userSession->getUser();
