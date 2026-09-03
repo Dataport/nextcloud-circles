@@ -23,6 +23,7 @@ use OCA\Circles\Service\TeamFolderPolicy;
 use OCP\IRequest;
 use OCP\IUserManager;
 use OCP\IUserSession;
+use OCP\Teams\ITeamFolderProvider;
 use OCP\Teams\ITeamManager;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Container\ContainerInterface;
@@ -144,12 +145,52 @@ class AdminControllerTest extends TestCase {
 			'teamId' => $circle['id'],
 			'defaultQuota' => 2147483648,
 		], $updated);
+		$storedCircle = $this->container->get(CircleService::class)->getCircle($circle['id']);
+		$this->assertSame(2147483648, $this->container->get(TeamFolderPolicy::class)->getTeamFolderQuota($storedCircle));
 
 		$removed = $this->adminController->updateTeamFolderDefaultQuota($circle['id'], null)->getData();
 		$this->assertSame([
 			'teamId' => $circle['id'],
 			'defaultQuota' => null,
 		], $removed);
+	}
+
+	public function testTeamFoldersIncludesDefaultQuota(): void {
+		$circle = $this->adminController->create(self::TEST_USER_1, 'listed-quota-circle')->getData();
+		$this->circlesToCleanup[] = $circle['id'];
+		$this->adminController->updateTeamFolderDefaultQuota($circle['id'], 2147483648);
+
+		$provider = $this->createMock(ITeamFolderProvider::class);
+		$provider->method('getTeamFolder')->willReturn(null);
+		$teamManager = $this->createMock(ITeamManager::class);
+		$teamManager->method('getTeamFolderProvider')->willReturn($provider);
+
+		$controller = new AdminController(
+			Application::APP_ID,
+			$this->container->get(IRequest::class),
+			$this->container->get(IUserSession::class),
+			$this->container->get(FederatedUserService::class),
+			$this->container->get(CircleService::class),
+			$this->container->get(MemberService::class),
+			$this->container->get(MembershipService::class),
+			$this->container->get(SearchService::class),
+			$teamManager,
+			$this->container->get(TeamFolderPolicy::class),
+			$this->container->get(ConfigService::class),
+		);
+
+		$teamFolders = $controller->teamFolders()->getData();
+		$listedCircle = array_values(array_filter(
+			$teamFolders,
+			static fn (array $teamFolder): bool => $teamFolder['teamId'] === $circle['id'],
+		));
+
+		$this->assertSame([[
+			'teamId' => $circle['id'],
+			'teamName' => 'listed-quota-circle',
+			'defaultQuota' => 2147483648,
+			'folder' => null,
+		]], $listedCircle);
 	}
 
 	public function testDestroy(): void {

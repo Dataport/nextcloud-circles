@@ -48,7 +48,10 @@ return [
 		['name' => 'TeamFolder#getTeamFolder', 'url' => '/teams/{circleId}/folder', 'verb' => 'GET'],
 		['name' => 'TeamFolder#unlinkTeamFolder', 'url' => '/teams/{circleId}/folder', 'verb' => 'DELETE'],
 		['name' => 'TeamFolder#upgradeTeamFolder', 'url' => '/teams/{circleId}/folder', 'verb' => 'POST'],
-		
+		['name' => 'TeamFolder#getLinkableTeamFolders', 'url' => '/teams/{circleId}/folder/linkable', 'verb' => 'GET'],
+		['name' => 'TeamFolder#linkTeamFolder', 'url' => '/teams/{circleId}/folder/link', 'verb' => 'POST'],
+		['name' => 'TeamFolder#updateTeamFolderQuota', 'url' => '/teams/{circleId}/folder/quota', 'verb' => 'PUT'],
+
 		// Teams Dashboard widget endpoint
 		['name' => 'TeamsDashboard#getCompleteTeamsData', 'url' => '/teams/dashboard/widget', 'verb' => 'GET'],
 
